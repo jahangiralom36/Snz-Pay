@@ -108,10 +108,21 @@
         android:textStyle="bold" />
 
     <Button
-        android:id="@+id/btnDialogSyncNow"
+        android:id="@+id/btnDialogHistory"
         android:layout_width="match_parent"
         android:layout_height="46dp"
         android:layout_marginTop="18dp"
+        android:background="@drawable/bg_btn_primary"
+        android:text="📜  ALL HISTORY"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/btnDialogSyncNow"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_marginTop="10dp"
         android:background="@drawable/bg_btn_primary"
         android:text="SYNC NOW"
         android:textColor="#FFFFFF"

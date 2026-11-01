@@ -17,11 +17,14 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.provider.Settings;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.animation.Animation;
 import android.view.animation.ScaleAnimation;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -36,7 +39,8 @@ public class MainActivity extends Activity {
 
     private DatabaseHelper dbHelper;
     private TextView tvTodayDeposit, tvTotalDeposit, tvTotalCount, btnMenu;
-    private TextView tvAppName, tvTagline, tvNotice, tvSyncStatus;
+    private TextView tvAppName, tvTagline, tvNotice, tvSyncStatus, tvTodayCount, tvTodayEmpty;
+    private LinearLayout listToday;
     private View tvLiveLogo;
     private boolean receiverRegistered = false;
 
@@ -58,12 +62,13 @@ public class MainActivity extends Activity {
 
         setContentView(R.layout.activity_main);
 
-        View mainView = findViewById(R.id.main_layout);
-        if (mainView != null && Build.VERSION.SDK_INT >= 20) {
+        final View mainView = findViewById(R.id.main_layout);
+        View scrollRoot = findViewById(R.id.main_scroll);
+        if (mainView != null && scrollRoot != null && Build.VERSION.SDK_INT >= 20) {
             final int baseSidePadding = (int) (22 * getResources().getDisplayMetrics().density);
             final int baseTopPadding = (int) (18 * getResources().getDisplayMetrics().density);
-            mainView.setOnApplyWindowInsetsListener((v, insets) -> {
-                v.setPadding(
+            scrollRoot.setOnApplyWindowInsetsListener((v, insets) -> {
+                mainView.setPadding(
                         insets.getSystemWindowInsetLeft() + baseSidePadding,
                         insets.getSystemWindowInsetTop() + baseTopPadding,
                         insets.getSystemWindowInsetRight() + baseSidePadding,
@@ -91,8 +96,17 @@ public class MainActivity extends Activity {
         tvTagline = findViewById(R.id.tvTagline);
         tvNotice = findViewById(R.id.tvNotice);
         tvSyncStatus = findViewById(R.id.tvSyncStatus);
+        tvTodayCount = findViewById(R.id.tvTodayCount);
+        tvTodayEmpty = findViewById(R.id.tvTodayEmpty);
+        listToday = findViewById(R.id.listToday);
 
         btnMenu.setOnClickListener(v -> showSettingsMenuDialog());
+        View viewAll = findViewById(R.id.btnViewAllHistory);
+        if (viewAll != null) viewAll.setOnClickListener(v -> openHistory());
+    }
+
+    private void openHistory() {
+        startActivity(new Intent(this, HistoryActivity.class));
     }
 
     /** ওয়েবসাইট থেকে আসা নাম, ট্যাগলাইন, লোগো, নোটিশ, On/Off, আপডেট */
@@ -132,6 +146,11 @@ public class MainActivity extends Activity {
         Button btnLogout = dialog.findViewById(R.id.btnDialogLogout);
         Button btnClose = dialog.findViewById(R.id.btnDialogClose);
         Button btnSyncNow = dialog.findViewById(R.id.btnDialogSyncNow);
+        Button btnHistory = dialog.findViewById(R.id.btnDialogHistory);
+        if (btnHistory != null) btnHistory.setOnClickListener(v -> {
+            dialog.dismiss();
+            openHistory();
+        });
 
         if (tvTitle != null) tvTitle.setText(AppConfig.get(this).optString("app_name", "SNZ Pay") + " Controller");
 
@@ -206,17 +225,44 @@ public class MainActivity extends Activity {
         tvTotalCount.setText(count + " Received");
 
         if (tvSyncStatus != null) {
+            String err = SyncManager.getLastError(this);
             if (!AppConfig.isAppEnabled(this)) {
                 tvSyncStatus.setText("⏸ Paused by admin — SMS are saved on this phone");
                 tvSyncStatus.setTextColor(Color.parseColor("#D97706"));
             } else if (waiting == 0) {
                 tvSyncStatus.setText("✓ All SMS uploaded to server");
                 tvSyncStatus.setTextColor(Color.parseColor("#16A34A"));
-            } else {
+            } else if (err == null || err.equals("No internet connection")) {
                 tvSyncStatus.setText("⏳ " + waiting + " SMS waiting for internet — will upload automatically");
                 tvSyncStatus.setTextColor(Color.parseColor("#D97706"));
+            } else {
+                // নেট আছে কিন্তু সার্ভার নিচ্ছে না → আসল কারণ দেখানো
+                tvSyncStatus.setText("⚠ " + waiting + " SMS not uploaded: " + err);
+                tvSyncStatus.setTextColor(Color.parseColor("#DC2626"));
             }
         }
+
+        loadTodayList();
+    }
+
+    /** আজকের SMS বক্স — সর্বশেষ ৩০টা */
+    private void loadTodayList() {
+        if (listToday == null) return;
+        java.util.List<DatabaseHelper.Tx> today = dbHelper.getTransactions(true, null, 30);
+        listToday.removeAllViews();
+        LayoutInflater inf = LayoutInflater.from(this);
+        for (int i = 0; i < today.size(); i++) {
+            View row = inf.inflate(R.layout.item_sms, listToday, false);
+            SmsRow.bind(this, row, today.get(i), false);
+            listToday.addView(row);
+            if (i < today.size() - 1) {
+                View line = new View(this);
+                line.setBackgroundColor(Color.parseColor("#E2E8F0"));
+                listToday.addView(line, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+            }
+        }
+        if (tvTodayEmpty != null) tvTodayEmpty.setVisibility(today.isEmpty() ? View.VISIBLE : View.GONE);
+        if (tvTodayCount != null) tvTodayCount.setText(dbHelper.getTodayCount() + " SMS");
     }
 
     private void forceRequestPermissions() {

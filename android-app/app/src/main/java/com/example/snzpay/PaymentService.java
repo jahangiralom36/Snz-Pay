@@ -9,8 +9,6 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.os.Build;
@@ -27,7 +25,9 @@ import android.os.SystemClock;
  */
 public class PaymentService extends Service {
 
-    private static final String CHANNEL_ID = "snz_gateway_service";
+    // নতুন চুপচাপ (Silent) চ্যানেল — আগের চ্যানেলগুলো মুছে ফেলা হয় যাতে দুটো নোটিফিকেশন না দেখায়
+    private static final String CHANNEL_ID = "snz_gateway_silent";
+    private static final String[] OLD_CHANNELS = {"snz_gateway_channel_live", "snz_gateway_service"};
     private static final int NOTIFICATION_ID = 1001;
     public static final String ACTION_REPOST = "com.example.snzpay.REPOST_NOTIFICATION";
 
@@ -102,24 +102,15 @@ public class PaymentService extends Service {
                 : new Notification.Builder(this);
 
         String appName = AppConfig.get(this).optString("app_name", "SNZ Pay");
-        int waiting = 0;
-        try { waiting = DatabaseHelper.get(this).getUnsyncedCount(); } catch (Exception ignored) {}
         String text;
         if (!AppConfig.isAppEnabled(this)) {
-            text = "Service paused by admin • SMS are saved on phone";
-        } else if (waiting > 0) {
-            text = waiting + " SMS waiting for internet • will send automatically";
+            text = appName + " সাময়িক বন্ধ আছে • SMS ফোনে জমা হচ্ছে";
         } else {
-            text = "24/7 SMS gateway is running";
+            text = appName + " অটো পেমেন্ট সক্রিয় আছে";
         }
 
-        try {
-            Bitmap logo = AppConfig.getLogo(this);
-            if (logo == null) logo = BitmapFactory.decodeResource(getResources(), R.drawable.app_icon);
-            if (logo != null) builder.setLargeIcon(logo);
-        } catch (Exception ignored) {}
-
-        builder.setContentTitle(appName + " Gateway Active")
+        // সাদামাটা ছোট নোটিফিকেশন: শুধু নাম + এক লাইন (বড় ছবি নেই, শব্দ নেই)
+        builder.setContentTitle(appName)
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
                 .setContentIntent(contentPi)
@@ -128,6 +119,7 @@ public class PaymentService extends Service {
                 .setAutoCancel(false)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false);
+        if (Build.VERSION.SDK_INT < 26) builder.setPriority(Notification.PRIORITY_LOW);
         if (Build.VERSION.SDK_INT >= 31) builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
 
         Notification n = builder.build();
@@ -156,9 +148,15 @@ public class PaymentService extends Service {
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            // DEFAULT importance + কোনো শব্দ নেই → স্ট্যাটাস বারে আইকন থাকে কিন্তু বিরক্ত করে না
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "SNZ Pay 24/7 Gateway",
-                    NotificationManager.IMPORTANCE_DEFAULT);
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null) {
+                for (String old : OLD_CHANNELS) {
+                    try { nm.deleteNotificationChannel(old); } catch (Exception ignored) {}
+                }
+            }
+            // LOW importance → "Silent" অংশে থাকে, কোনো শব্দ/ভাইব্রেশন/পপআপ নেই
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "SNZ Pay Auto Payment",
+                    NotificationManager.IMPORTANCE_LOW);
             channel.setDescription("Keeps SNZ Pay listening for payment SMS 24/7");
             channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
             channel.setSound(null, null);

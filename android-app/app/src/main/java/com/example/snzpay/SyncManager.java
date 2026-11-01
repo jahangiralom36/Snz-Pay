@@ -55,12 +55,16 @@ public final class SyncManager {
         synchronized (LOCK) {
             DatabaseHelper db = DatabaseHelper.get(ctx);
             String key = AppConfig.getLicenseKey(ctx);
-            if (key.isEmpty()) return db.getUnsyncedCount();
+            if (key.isEmpty()) {
+                setLastError(ctx, "Not logged in");
+                return db.getUnsyncedCount();
+            }
 
             // অ্যাডমিন অ্যাপ OFF রাখলে SMS ফোনেই জমা থাকবে, ON করলে যাবে
             if (!AppConfig.isAppEnabled(ctx)) return db.getUnsyncedCount();
 
             if (!AppConfig.isOnline(ctx)) {
+                setLastError(ctx, "No internet connection");
                 SyncJobService.scheduleWhenOnline(ctx);
                 return db.getUnsyncedCount();
             }
@@ -113,19 +117,64 @@ public final class SyncManager {
             payload.put("sms_time", t.smsTime);   // দেরিতে পাঠালেও আসল সময় সার্ভারে যাবে
 
             AppConfig.HttpResult res = AppConfig.httpPostJson(AppConfig.GATEWAY_URL, payload, 10000);
+            String serverMsg = "";
+            try { serverMsg = new JSONObject(res.body).optString("message", ""); } catch (Exception ignored) {}
+
             if (res.code == 200) {
                 String st = new JSONObject(res.body).optString("status", "");
-                if ("success".equals(st) || "already_exists".equals(st)) return UPLOAD_OK;
+                if ("success".equals(st) || "already_exists".equals(st)) {
+                    setLastError(ctx, null);
+                    return UPLOAD_OK;
+                }
+                fail(ctx, t, "Server: " + (serverMsg.isEmpty() ? st : serverMsg));
                 return UPLOAD_RETRY;
             }
             if (res.code == 422) return UPLOAD_REJECTED;     // TrxID/Amount ভুল — বারবার পাঠিয়ে লাভ নেই
-            DatabaseHelper.get(ctx).markAttempt(t.id, "HTTP " + res.code);
-            return UPLOAD_RETRY;                              // 403 (লাইসেন্স), 500, ইত্যাদি
+
+            String reason;
+            if (res.code == 403 && serverMsg.toLowerCase().contains("unauthorized")) {
+                reason = "Secret token does not match the server (APP_SECRET_TOKEN in config.php)";
+            } else if (res.code == 403) {
+                reason = "License key invalid or expired — login again with an active key";
+            } else if (res.code == 404) {
+                reason = "api/app_gateway.php not found on the server";
+            } else if (res.code >= 500) {
+                reason = "Server error (HTTP " + res.code + ")" + (serverMsg.isEmpty() ? "" : ": " + serverMsg);
+            } else {
+                reason = "HTTP " + res.code + (serverMsg.isEmpty() ? "" : ": " + serverMsg);
+            }
+            fail(ctx, t, reason);
+            return UPLOAD_RETRY;
+        } catch (java.net.UnknownHostException e) {
+            fail(ctx, t, "Cannot reach " + AppConfig.BASE_URL + " (no internet / DNS)");
+            return UPLOAD_RETRY;
+        } catch (java.net.SocketTimeoutException e) {
+            fail(ctx, t, "Server did not respond (timeout)");
+            return UPLOAD_RETRY;
+        } catch (javax.net.ssl.SSLException e) {
+            fail(ctx, t, "SSL/HTTPS problem: " + e.getMessage());
+            return UPLOAD_RETRY;
         } catch (Exception e) {
             Log.w(TAG, "upload failed: " + e.getMessage());
-            DatabaseHelper.get(ctx).markAttempt(t.id, e.getClass().getSimpleName());
+            fail(ctx, t, e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()));
             return UPLOAD_RETRY;
         }
+    }
+
+    private static void fail(Context ctx, DatabaseHelper.Tx t, String reason) {
+        DatabaseHelper.get(ctx).markAttempt(t.id, reason);
+        setLastError(ctx, reason);
+    }
+
+    /** শেষবার আপলোড কেন ব্যর্থ হয়েছিল (সফল হলে null) — অ্যাপের স্ক্রিনে দেখানো হয় */
+    public static String getLastError(Context ctx) {
+        return ctx.getSharedPreferences(SYNC_PREFS, Context.MODE_PRIVATE).getString("last_error", null);
+    }
+
+    private static void setLastError(Context ctx, String reason) {
+        SharedPreferences.Editor e = ctx.getSharedPreferences(SYNC_PREFS, Context.MODE_PRIVATE).edit();
+        if (reason == null) e.remove("last_error"); else e.putString("last_error", reason);
+        e.apply();
     }
 
     /**

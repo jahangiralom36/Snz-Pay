@@ -106,9 +106,47 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     public static final class Tx {
         public long id;
-        public String method, trxId, customer, rawSms, origin;
+        public String method, trxId, customer, rawSms, origin, status, lastError, date;
         public double amount;
         public long smsTime;
+    }
+
+    /**
+     * History তালিকার জন্য।
+     * @param onlyToday true হলে শুধু আজকের
+     * @param status    null = সব, নাহলে ST_PENDING / ST_SYNCED / ST_REJECTED
+     */
+    public synchronized List<Tx> getTransactions(boolean onlyToday, String status, int limit) {
+        List<Tx> list = new ArrayList<>();
+        StringBuilder where = new StringBuilder("1=1");
+        List<String> args = new ArrayList<>();
+        if (onlyToday) { where.append(" AND date=?"); args.add(today()); }
+        if (status != null) { where.append(" AND status=?"); args.add(status); }
+        try (Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id, method, trx_id, amount, sender, raw_sms, origin, sms_time, status, last_error, date " +
+                "FROM transactions WHERE " + where + " ORDER BY id DESC LIMIT " + limit,
+                args.toArray(new String[0]))) {
+            while (c.moveToNext()) {
+                Tx t = new Tx();
+                t.id = c.getLong(0);
+                t.method = c.getString(1);
+                t.trxId = c.getString(2);
+                t.amount = c.getDouble(3);
+                t.customer = c.getString(4);
+                t.rawSms = c.getString(5);
+                t.origin = c.getString(6);
+                t.smsTime = c.getLong(7);
+                t.status = c.getString(8);
+                t.lastError = c.getString(9);
+                t.date = c.getString(10);
+                list.add(t);
+            }
+        }
+        return list;
+    }
+
+    public synchronized int getTodayCount() {
+        return count("SELECT COUNT(*) FROM transactions WHERE status!=? AND date=?", new String[]{ST_REJECTED, today()});
     }
 
     public synchronized List<Tx> getUnsynced(int limit) {

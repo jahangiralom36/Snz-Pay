@@ -42,6 +42,11 @@
             android:exported="false"
             android:launchMode="singleTop" />
 
+        <!-- ২খ. সব SMS History স্ক্রিন -->
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false" />
+
         <!-- ৩. ২৪/৭ ব্যাকগ্রাউন্ড সার্ভিস -->
         <service
             android:name=".PaymentService"
