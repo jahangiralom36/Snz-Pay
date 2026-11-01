@@ -334,30 +334,43 @@ if (!$isAuthorized) {
         }
 
         // -----------------------------------------------------------------
-        // 🔗 এক Brand Key = এক জায়গা (Website / App / Bot)
-        // ওয়েবসাইটের JS থেকে কল → সেই ডোমেইন; সার্ভার/বট থেকে কল → সেই সার্ভারের IP
-        // অন্য জায়গায় লাগাতে চাইলে Dashboard → Brands থেকে "Disconnect" করতে হবে
+        // 🔗 এক Brand Key = এক জায়গা — IP দেখা হয় না (তাই সার্ভার/নেট বদলালেও block হবে না)
+        // API কলে "client_name" (ওয়েবসাইটের ডোমেইন / বটের username / অ্যাপের নাম) পাঠালে
+        // কী প্রথমবার সেই নামে কানেক্ট হয়; পরে অন্য নাম দিয়ে ব্যবহার করলে আটকায়।
+        // নাম না পাঠালে কখনো block হয় না।
+        // অন্য জায়গায় লাগাতে চাইলে Dashboard → Brands থেকে "Move to new place"।
         // -----------------------------------------------------------------
-        $originHost = '';
-        foreach (['HTTP_ORIGIN', 'HTTP_REFERER'] as $h) {
-            if (!empty($_SERVER[$h])) {
-                $host = parse_url($_SERVER[$h], PHP_URL_HOST);
-                if ($host) { $originHost = strtolower(preg_replace('/^www\./i', '', $host)); break; }
-            }
+        $clientRaw = '';
+        foreach (['client_name', 'client', 'site', 'domain', 'bot', 'app', 'website'] as $ck) {
+            if (!empty($input[$ck]) && is_scalar($input[$ck])) { $clientRaw = (string) $input[$ck]; break; }
         }
-        $clientIp = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? ($_SERVER['REMOTE_ADDR'] ?? '');
-        $ua = substr(trim((string) ($_SERVER['HTTP_USER_AGENT'] ?? '')), 0, 60);
-        $fingerprint = $originHost !== '' ? 'web:' . $originHost : 'ip:' . $clientIp;
-        $label = $originHost !== '' ? $originHost : ('Server IP ' . $clientIp . ($ua !== '' ? ' (' . $ua . ')' : ''));
+        if ($clientRaw === '' && !empty($_SERVER['HTTP_X_CLIENT_NAME'])) $clientRaw = (string) $_SERVER['HTTP_X_CLIENT_NAME'];
+        if ($clientRaw === '' && !empty($_SERVER['HTTP_ORIGIN'])) $clientRaw = (string) $_SERVER['HTTP_ORIGIN'];   // ওয়েবসাইটের JS থেকে কল
+
+        $clientName = strtolower(trim($clientRaw));
+        $clientName = preg_replace('#^[a-z][a-z0-9+.-]*://#', '', $clientName);   // https:// বাদ
+        $clientName = preg_replace('#^(www\.|t\.me/|telegram\.me/)#', '', $clientName);
+        $clientName = preg_replace('#[/?\#].*$#', '', $clientName);              // /path?x বাদ
+        $clientName = ltrim($clientName, '@');
+        $clientName = substr(preg_replace('/[^a-z0-9._:-]/', '', $clientName), 0, 120);
 
         $bound = (string) ($bRow['bound_fingerprint'] ?? '');
-        if ($bound === '') {
-            $pdo->prepare("UPDATE brand_keys SET is_connected = 1, connected_at = COALESCE(connected_at, NOW()), bound_fingerprint = ?, bound_label = ?, bound_at = NOW(), last_used_at = NOW(), expires_at = ?, status = 'active' WHERE id = ?")
-                ->execute([$fingerprint, $label, $planUntil, $bRow['id']]);
-        } elseif (!hash_equals($bound, $fingerprint)) {
-            fail(403, "This API key is already connected to " . ($bRow['bound_label'] ?: 'another place') . ". One key works in one place only — disconnect it from your dashboard to use it here.", ["connected_to" => $bRow['bound_label']]);
+        if (strncmp($bound, 'ip:', 3) === 0 || strncmp($bound, 'web:', 4) === 0) $bound = '';   // পুরনো IP লক বাতিল
+
+        if ($clientName !== '') {
+            $fingerprint = 'name:' . $clientName;
+            if ($bound === '') {
+                $pdo->prepare("UPDATE brand_keys SET is_connected = 1, connected_at = COALESCE(connected_at, NOW()), bound_fingerprint = ?, bound_label = ?, bound_at = NOW(), last_used_at = NOW(), expires_at = ?, status = 'active' WHERE id = ?")
+                    ->execute([$fingerprint, $clientName, $planUntil, $bRow['id']]);
+            } elseif (!hash_equals($bound, $fingerprint)) {
+                fail(403, "This API key is already connected to " . ($bRow['bound_label'] ?: 'another place') . ". One key works in one place only — use \"Move to new place\" in your dashboard to use it on " . $clientName . ".", ["connected_to" => $bRow['bound_label']]);
+            } else {
+                $pdo->prepare("UPDATE brand_keys SET last_used_at = NOW(), expires_at = ? WHERE id = ?")->execute([$planUntil, $bRow['id']]);
+            }
         } else {
-            $pdo->prepare("UPDATE brand_keys SET last_used_at = NOW(), expires_at = ? WHERE id = ?")->execute([$planUntil, $bRow['id']]);
+            // নাম পাঠানো হয়নি → block না করে শুধু ব্যবহারের সময় রাখা
+            $pdo->prepare("UPDATE brand_keys SET last_used_at = NOW(), expires_at = ?, is_connected = 1, status = 'active'" . ($bound === '' && !empty($bRow['bound_fingerprint']) ? ", bound_fingerprint = NULL, bound_label = NULL" : "") . " WHERE id = ?")
+                ->execute([$planUntil, $bRow['id']]);
         }
         $isAuthorized = true;
         $keyOwnerId = (int) $bRow['user_id'];
