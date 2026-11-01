@@ -10,7 +10,9 @@ require_once __DIR__ . '/../config.php';
 // -------------------------------------------------------------------------
 if (!defined('MASTER_KEY')) define('MASTER_KEY', 'CHANGE_ME_MASTER_KEY');
 if (!defined('MASTER_USER_ID')) define('MASTER_USER_ID', 1);
-if (!defined('APP_SECRET_TOKEN')) define('APP_SECRET_TOKEN', 'CHANGE_ME_APP_TOKEN');
+// অ্যাপের ভেতরে যে token বসানো আছে (config.php তে অন্য কিছু থাকলেও এটা গ্রহণ করা হবে)
+if (!defined('SNZ_APP_BUILTIN_TOKEN')) define('SNZ_APP_BUILTIN_TOKEN', 'CHANGE_ME_APP_TOKEN');
+if (!defined('APP_SECRET_TOKEN')) define('APP_SECRET_TOKEN', SNZ_APP_BUILTIN_TOKEN);
 if (!isset($FIREBASE_URL)) $FIREBASE_URL = "";
 if (!isset($USDT_RATE)) $USDT_RATE = 125.00;
 if (!isset($MIN_BINANCE_USDT)) $MIN_BINANCE_USDT = 0.25;
@@ -117,7 +119,7 @@ if (empty($data)) {
 }
 
 $secret = trim((string) ($data['secret_key'] ?? $data['secret'] ?? $data['token'] ?? ''));
-if (!hash_equals(APP_SECRET_TOKEN, $secret)) {
+if ($secret === '' || (!hash_equals((string) APP_SECRET_TOKEN, $secret) && !hash_equals(SNZ_APP_BUILTIN_TOKEN, $secret))) {
     jsonResponse(403, ["status" => "error", "message" => "Unauthorized access."]);
 }
 
