@@ -8,3 +8,4 @@ config.php
 SNZPay-6-files.zip
 SNZPay-update.zip
 SNZPay-App-Update.zip
+__pycache__/
