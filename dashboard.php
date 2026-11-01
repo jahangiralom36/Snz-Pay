@@ -859,6 +859,16 @@ try {
             50% { transform: scale(1.06); opacity: 1; }
         }
         .pulse-icon { animation: pulseGlow 2.5s infinite ease-in-out; }
+
+        /* Sidebar: গ্রুপ টাইটেল + ছোট ফোনে মেনু স্ক্রল */
+        .sidebar-top { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+        .sidebar-scroll { overflow-y: auto; min-height: 0; flex: 1 1 auto; scrollbar-width: none; }
+        .sidebar-scroll::-webkit-scrollbar { display: none; }
+        .nav-group-label {
+            font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+            color: #4b6a9b; padding: 14px 16px 4px;
+        }
+        .nav-group-label:first-child { padding-top: 4px; }
     </style>
 </head>
 <body class="text-[#F5F8FC] font-sans overflow-x-hidden selection:bg-[#00D9FF] selection:text-[#020817]">
@@ -896,7 +906,7 @@ try {
 
     <!-- SIDEBAR DRAWER -->
     <aside id="sidebar" class="fixed top-0 left-0 bottom-0 w-72 bg-[#030d24]/95 backdrop-blur-2xl border-r border-[#0e275c] z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 flex flex-col justify-between">
-        <div>
+        <div class="sidebar-top">
             <div class="p-5 border-b border-[#0e275c] flex justify-between items-center">
                 <div class="flex items-center gap-2.5">
                     <img src="<?= htmlspecialchars($SITE_LOGO) ?>" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23007BFF%22/%3E%3Cstop offset=%22.5%22 stop-color=%22%2300D9FF%22/%3E%3Cstop offset=%221%22 stop-color=%22%2300D89A%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22url(%23g)%22/%3E%3Ctext x=%2232%22 y=%2244%22 font-family=%22Arial%22 font-weight=%22900%22 font-size=%2234%22 text-anchor=%22middle%22 fill=%22%23061535%22%3ES%3C/text%3E%3C/svg%3E'" alt="Logo" class="w-9 h-9 object-contain rounded-xl shadow-lg shadow-cyan-500/20">
@@ -910,64 +920,58 @@ try {
                 </button>
             </div>
 
-            <nav class="p-3 space-y-1.5 text-sm font-medium">
+            <nav class="p-3 space-y-1 text-sm font-medium sidebar-scroll">
+                <div class="nav-group-label">Main</div>
                 <button onclick="switchView('view-dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 active-tab transition">
                     <i class="fa-solid fa-chart-pie w-5 text-center text-base"></i> Dashboard
                 </button>
-
+                <button onclick="switchView('view-add-fund')" id="nav-add-fund" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
+                    <i class="fa-solid fa-wallet w-5 text-center text-base text-[#00D89A]"></i> Add Funds
+                </button>
                 <button onclick="switchView('view-history')" id="nav-history" class="nav-item w-full flex items-center justify-between px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
                     <span class="flex items-center gap-3.5">
                         <i class="fa-solid fa-clock-rotate-left w-5 text-center text-base text-[#00D9FF]"></i> History
                     </span>
                     <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30"><?= count($allTransactionsHistory) ?></span>
                 </button>
-
-                <button onclick="switchView('view-wallet-setup')" id="nav-wallet-setup" class="nav-item w-full flex items-center justify-between px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
-                    <span class="flex items-center gap-3.5">
-                        <i class="fa-solid fa-sliders w-5 text-center text-base text-[#00D9FF]"></i> Wallet Setup
-                    </span>
-                    <span class="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/50 uppercase tracking-widest animate-pulse">NEW</span>
+                <div class="nav-group-label">Plans & License</div>
+                <button onclick="switchView('view-plans')" id="nav-plans" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
+                    <i class="fa-solid fa-layer-group w-5 text-center text-base text-[#007BFF]"></i> Pricing Plans
                 </button>
-
-                <button onclick="switchView('view-custom-sms')" id="nav-custom-sms" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
-                    <i class="fa-solid fa-envelope-open-text w-5 text-center text-base text-[#38BDF8]"></i> Custom SMS
-                </button>
-
-                <button onclick="switchView('view-brands')" id="nav-brands" class="nav-item w-full flex items-center justify-between px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
-                    <span class="flex items-center gap-3.5">
-                        <i class="fa-solid fa-robot w-5 text-center text-base text-[#FBBF24]"></i> Brands (Bot Key)
-                    </span>
-                    <span class="text-[9px] font-bold px-2 py-0.5 rounded-full <?= $userBrandKey ? 'bg-[#00D89A]/20 text-[#00D89A] border border-[#00D89A]/40' : 'bg-slate-800 text-slate-400' ?>"><?= $userBrandKey ? '1 KEY' : 'NEW' ?></span>
-                </button>
-
-                <button onclick="switchView('view-add-fund')" id="nav-add-fund" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
-                    <i class="fa-solid fa-wallet w-5 text-center text-base text-[#00D89A]"></i> Add Funds
-                </button>
-
                 <button onclick="switchView('view-my-plan')" id="nav-my-plan" class="nav-item w-full flex items-center justify-between px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
                     <span class="flex items-center gap-3.5">
                         <i class="fa-solid fa-key w-5 text-center text-base text-[#00D9FF]"></i> My Plans
                     </span>
                     <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#00D89A]/20 text-[#00D89A] border border-[#00D89A]/30"><?= count($activeKeys) ?></span>
                 </button>
-
-                <button onclick="switchView('view-plans')" id="nav-plans" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
-                    <i class="fa-solid fa-layer-group w-5 text-center text-base text-[#007BFF]"></i> Pricing Plans
+                <div class="nav-group-label">Payment Setup</div>
+                <button onclick="switchView('view-wallet-setup')" id="nav-wallet-setup" class="nav-item w-full flex items-center justify-between px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
+                    <span class="flex items-center gap-3.5">
+                        <i class="fa-solid fa-sliders w-5 text-center text-base text-[#00D9FF]"></i> Wallet Setup
+                    </span>
+                    <span class="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/50 uppercase tracking-widest animate-pulse">NEW</span>
                 </button>
-
+                <button onclick="switchView('view-brands')" id="nav-brands" class="nav-item w-full flex items-center justify-between px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
+                    <span class="flex items-center gap-3.5">
+                        <i class="fa-solid fa-robot w-5 text-center text-base text-[#FBBF24]"></i> Brands (Bot Key)
+                    </span>
+                    <span class="text-[9px] font-bold px-2 py-0.5 rounded-full <?= $userBrandKey ? 'bg-[#00D89A]/20 text-[#00D89A] border border-[#00D89A]/40' : 'bg-slate-800 text-slate-400' ?>"><?= $userBrandKey ? '1 KEY' : 'NEW' ?></span>
+                </button>
+                <button onclick="switchView('view-custom-sms')" id="nav-custom-sms" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
+                    <i class="fa-solid fa-envelope-open-text w-5 text-center text-base text-[#38BDF8]"></i> Custom SMS
+                </button>
+                <div class="nav-group-label">Help & Tools</div>
+                <button onclick="switchView('view-app')" id="nav-app" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
+                    <i class="fa-brands fa-android w-5 text-center text-base text-[#35F58A]"></i> Download App
+                </button>
+                <button onclick="switchView('view-support')" id="nav-support" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
+                    <i class="fa-solid fa-headset w-5 text-center text-base text-[#00D9FF]"></i> Support
+                </button>
                 <button onclick="switchView('view-developer')" id="nav-developer" class="nav-item w-full flex items-center justify-between px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
                     <span class="flex items-center gap-3.5">
                         <i class="fa-solid fa-code w-5 text-center text-base text-[#00D9FF]"></i> Developer API
                     </span>
                     <span class="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/40 uppercase tracking-wider">PRO</span>
-                </button>
-
-                <button onclick="switchView('view-app')" id="nav-app" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
-                    <i class="fa-brands fa-android w-5 text-center text-base text-[#35F58A]"></i> Download App
-                </button>
-
-                <button onclick="switchView('view-support')" id="nav-support" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
-                    <i class="fa-solid fa-headset w-5 text-center text-base text-[#00D9FF]"></i> Support
                 </button>
             </nav>
         </div>
