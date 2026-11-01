@@ -667,6 +667,32 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
             box-shadow: 0 4px 15px -3px rgba(0, 217, 255, 0.4);
         }
         .no-scrollbar::-webkit-scrollbar { display: none; }
+
+        /* ☰ Admin drawer */
+        .adm-menu-btn { width: 42px; height: 42px; border-radius: 14px; background: #041433; border: 1.5px solid #00D9FF;
+            color: #00D9FF; font-size: 18px; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 12px rgba(0,217,255,.35); flex-shrink: 0; }
+        .adm-menu-btn:active { transform: scale(.95); }
+        .adm-overlay { position: fixed; inset: 0; background: rgba(2,8,23,.7); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+            z-index: 55; opacity: 0; pointer-events: none; transition: opacity .25s; }
+        .adm-overlay.open { opacity: 1; pointer-events: auto; }
+        .adm-drawer { position: fixed; top: 0; left: 0; bottom: 0; width: 290px; max-width: 86vw; z-index: 60;
+            background: linear-gradient(180deg, #0a1f4d 0%, #040f2a 100%); border-right: 1px solid #143985;
+            box-shadow: 10px 0 40px rgba(0,0,0,.5); transform: translateX(-105%); transition: transform .28s cubic-bezier(.16,1,.3,1);
+            display: flex; flex-direction: column; }
+        .adm-drawer.open { transform: translateX(0); }
+        .adm-drawer-head { padding: 18px 16px; border-bottom: 1px solid #0d265c; display: flex; align-items: center; justify-content: space-between; }
+        .adm-close { width: 34px; height: 34px; border-radius: 10px; color: #94a3b8; background: #051433; border: 1px solid #143985; }
+        .adm-nav { flex: 1; overflow-y: auto; padding: 8px 12px 16px; }
+        .adm-nav-label { font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #4b6a9b; padding: 14px 10px 6px; }
+        .adm-nav-item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 11px 14px; margin-bottom: 4px;
+            border-radius: 14px; font-size: 13px; font-weight: 700; color: #cbd5e1; text-align: left; transition: background .15s; }
+        .adm-nav-item i { width: 20px; text-align: center; font-size: 15px; }
+        .adm-nav-item:hover { background: #0b245a; color: #fff; }
+        .adm-drawer-foot { padding: 12px; border-top: 1px solid #0d265c; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .adm-foot-btn { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border-radius: 12px;
+            background: #071a44; border: 1px solid #143985; color: #e2e8f0; font-size: 12px; font-weight: 700; }
+        .adm-foot-danger { color: #fca5a5; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
@@ -683,7 +709,10 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
 
     <!-- Master Header -->
     <header class="bg-[#061535]/90 backdrop-blur-lg border-b border-[#0d265c] px-4 md:px-8 py-3.5 flex justify-between items-center sticky top-0 z-40 shadow-xl">
-        <div class="flex items-center gap-2.5">
+        <div class="flex items-center gap-3">
+            <button type="button" onclick="toggleAdminDrawer(true)" class="adm-menu-btn" aria-label="Open menu">
+                <i class="fa-solid fa-bars"></i>
+            </button>
             <img src="<?= htmlspecialchars($SITE_LOGO) ?>" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%22 stop-color=%22%23007BFF%22/%3E%3Cstop offset=%22.5%22 stop-color=%22%2300D9FF%22/%3E%3Cstop offset=%221%22 stop-color=%22%2300D89A%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22url(%23g)%22/%3E%3Ctext x=%2232%22 y=%2244%22 font-family=%22Arial%22 font-weight=%22900%22 font-size=%2234%22 text-anchor=%22middle%22 fill=%22%23061535%22%3ES%3C/text%3E%3C/svg%3E'" alt="<?= htmlspecialchars($SITE_NAME) ?> Logo" class="w-9 h-9 object-contain shrink-0">
             <div>
                 <h1 class="text-base font-black text-white tracking-wider flex items-center gap-2">
@@ -694,48 +723,73 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
         </div>
         <div class="flex items-center gap-3">
             <a href="dashboard.php" target="_blank" class="text-xs bg-[#092257] hover:bg-[#0c2e75] text-white px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 border border-[#174396]">
-                <i class="fa-solid fa-arrow-up-right-from-square text-[10px] text-[#00D9FF]"></i> User Portal
+                <i class="fa-solid fa-arrow-up-right-from-square text-[10px] text-[#00D9FF]"></i> <span class="hidden sm:inline">User Portal</span>
             </a>
             <a href="?logout=1" class="text-xs bg-[#0a1e4a] hover:bg-[#0f2d6e] text-slate-300 border border-[#143985] px-3.5 py-2 rounded-xl font-bold transition flex items-center gap-1.5">
-                <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+                <i class="fa-solid fa-arrow-right-from-bracket"></i> <span class="hidden sm:inline">Logout</span>
             </a>
         </div>
     </header>
 
-    <!-- Top Horizontal Scroll Navigation -->
-    <div class="bg-[#051433]/90 backdrop-blur-md border-b border-[#0d265c] sticky top-[65px] z-30 px-4 py-2.5">
-        <div class="max-w-6xl mx-auto flex items-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap">
-            <button onclick="switchSection('sec-overview')" id="tab-sec-overview" class="nav-tab px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:bg-[#081e4b] active-tab transition flex items-center gap-2">
-                <i class="fa-solid fa-chart-pie text-sm"></i> Overview
-            </button>
-            <button onclick="switchSection('sec-apk')" id="tab-sec-apk" class="nav-tab px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-[#081e4b] transition flex items-center gap-2">
-                <i class="fa-brands fa-android text-sm text-[#35F58A]"></i> APK Manager (Any MB)
-            </button>
-            <button onclick="switchSection('sec-create-key')" id="tab-sec-create-key" class="nav-tab px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-[#081e4b] transition flex items-center gap-2">
-                <i class="fa-solid fa-key text-sm text-[#00D9FF]"></i> Create License
-            </button>
-            <button onclick="switchSection('sec-balance')" id="tab-sec-balance" class="nav-tab px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-[#081e4b] transition flex items-center gap-2">
-                <i class="fa-solid fa-wallet text-sm text-[#00D89A]"></i> Add Balance
-            </button>
-            <button onclick="switchSection('sec-payments')" id="tab-sec-payments" class="nav-tab px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-[#081e4b] transition flex items-center gap-2">
-                <i class="fa-solid fa-credit-card text-sm text-[#007BFF]"></i> Payment Setup
-            </button>
-            <button onclick="switchSection('sec-licenses')" id="tab-sec-licenses" class="nav-tab px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-[#081e4b] transition flex items-center gap-2">
-                <i class="fa-solid fa-list-check text-sm text-cyan-400"></i> All Licenses
-            </button>
-            <button onclick="switchSection('sec-users')" id="tab-sec-users" class="nav-tab px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-[#081e4b] transition flex items-center gap-2">
-                <i class="fa-solid fa-users text-sm text-emerald-400"></i> All Users
-            </button>
-            <button onclick="switchSection('sec-site')" id="tab-sec-site" class="nav-tab px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-[#081e4b] transition flex items-center gap-2">
-                <i class="fa-solid fa-gear text-sm text-amber-400"></i> Site Settings
-            </button>
-            <button onclick="switchSection('sec-app')" id="tab-sec-app" class="nav-tab px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-[#081e4b] transition flex items-center gap-2">
-                <i class="fa-solid fa-mobile-screen text-sm text-[#35F58A]"></i> App Settings
-            </button>
-            <button onclick="switchSection('sec-sms-rules')" id="tab-sec-sms-rules" class="nav-tab px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-[#081e4b] transition flex items-center gap-2">
-                <i class="fa-solid fa-comment-sms text-sm text-[#00D9FF]"></i> SMS Rules
-            </button>
+    <!-- ☰ মেনু (সাইড ড্রয়ার) — উপরের লম্বা বাটনের সারির বদলে -->
+    <div id="admOverlay" class="adm-overlay" onclick="toggleAdminDrawer(false)"></div>
+    <aside id="admDrawer" class="adm-drawer">
+        <div class="adm-drawer-head">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl snz-gradient flex items-center justify-center text-[#061535] font-black">⚙</div>
+                <div>
+                    <div class="text-sm font-black text-white">Admin Menu</div>
+                    <div class="text-[10px] text-slate-400">Choose a section</div>
+                </div>
+            </div>
+            <button type="button" onclick="toggleAdminDrawer(false)" class="adm-close" aria-label="Close menu"><i class="fa-solid fa-xmark"></i></button>
         </div>
+        <nav class="adm-nav">
+            <div class="adm-nav-label">Main</div>
+                <button onclick="switchSection('sec-overview')" id="tab-sec-overview" class="nav-tab adm-nav-item">
+                <i class="fa-solid fa-chart-pie text-sm"></i> Overview
+                </button>
+                <button onclick="switchSection('sec-licenses')" id="tab-sec-licenses" class="nav-tab adm-nav-item">
+                <i class="fa-solid fa-list-check text-sm text-cyan-400"></i> All Licenses
+                </button>
+                <button onclick="switchSection('sec-users')" id="tab-sec-users" class="nav-tab adm-nav-item">
+                <i class="fa-solid fa-users text-sm text-emerald-400"></i> All Users
+                </button>
+            <div class="adm-nav-label">Manage</div>
+                <button onclick="switchSection('sec-create-key')" id="tab-sec-create-key" class="nav-tab adm-nav-item">
+                <i class="fa-solid fa-key text-sm text-[#00D9FF]"></i> Create License
+                </button>
+                <button onclick="switchSection('sec-balance')" id="tab-sec-balance" class="nav-tab adm-nav-item">
+                <i class="fa-solid fa-wallet text-sm text-[#00D89A]"></i> Add Balance
+                </button>
+                <button onclick="switchSection('sec-payments')" id="tab-sec-payments" class="nav-tab adm-nav-item">
+                <i class="fa-solid fa-credit-card text-sm text-[#007BFF]"></i> Payment Setup
+                </button>
+            <div class="adm-nav-label">Android App</div>
+                <button onclick="switchSection('sec-apk')" id="tab-sec-apk" class="nav-tab adm-nav-item">
+                <i class="fa-brands fa-android text-sm text-[#35F58A]"></i> APK Manager (Any MB)
+                </button>
+                <button onclick="switchSection('sec-app')" id="tab-sec-app" class="nav-tab adm-nav-item">
+                <i class="fa-solid fa-mobile-screen text-sm text-[#35F58A]"></i> App Settings
+                </button>
+                <button onclick="switchSection('sec-sms-rules')" id="tab-sec-sms-rules" class="nav-tab adm-nav-item">
+                <i class="fa-solid fa-comment-sms text-sm text-[#00D9FF]"></i> SMS Rules
+                </button>
+            <div class="adm-nav-label">Website</div>
+                <button onclick="switchSection('sec-site')" id="tab-sec-site" class="nav-tab adm-nav-item">
+                <i class="fa-solid fa-gear text-sm text-amber-400"></i> Site Settings
+                </button>
+        </nav>
+        <div class="adm-drawer-foot">
+            <a href="dashboard.php" target="_blank" class="adm-foot-btn"><i class="fa-solid fa-arrow-up-right-from-square text-[#00D9FF]"></i> User Portal</a>
+            <a href="?logout=1" class="adm-foot-btn adm-foot-danger"><i class="fa-solid fa-arrow-right-from-bracket"></i> Logout</a>
+        </div>
+    </aside>
+
+    <!-- বর্তমান পেজের নাম -->
+    <div class="max-w-6xl mx-auto px-4 md:px-8 pt-5 flex items-center gap-2.5">
+        <span id="admSectionIcon" class="w-8 h-8 rounded-xl bg-[#00D9FF]/15 text-[#00D9FF] flex items-center justify-center text-sm"><i class="fa-solid fa-chart-pie"></i></span>
+        <h2 id="admSectionTitle" class="text-base font-black text-white">Overview</h2>
     </div>
 
     <main class="p-4 md:p-8 max-w-6xl mx-auto space-y-6">
@@ -1342,7 +1396,23 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
     </main>
 
     <script>
+        function toggleAdminDrawer(open) {
+            document.getElementById('admDrawer').classList.toggle('open', open);
+            document.getElementById('admOverlay').classList.toggle('open', open);
+            document.body.style.overflow = open ? 'hidden' : '';
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleAdminDrawer(false); });
+
         function switchSection(sectionId) {
+            toggleAdminDrawer(false);
+            const tab = document.getElementById('tab-' + sectionId);
+            if (tab) {
+                const icon = tab.querySelector('i');
+                document.getElementById('admSectionTitle').innerText = tab.innerText.trim();
+                if (icon) document.getElementById('admSectionIcon').innerHTML = icon.outerHTML;
+            }
+            try { sessionStorage.setItem('snz_admin_section', sectionId); } catch (e) {}
+            window.scrollTo({ top: 0, behavior: 'smooth' });
             document.querySelectorAll('.admin-section').forEach(el => el.classList.add('hidden'));
             document.getElementById(sectionId).classList.remove('hidden');
 
@@ -1398,6 +1468,16 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
 
         <?php if ($activeSection !== 'sec-overview'): ?>
             switchSection(<?= json_encode($activeSection) ?>);
+        <?php elseif (isset($_GET['delete_key'])): ?>
+            switchSection('sec-licenses');
+        <?php else: ?>
+            // রিলোডের পর শেষবার যে পেজে ছিলেন সেখানেই থাকবে
+            (function () {
+                let last = null;
+                try { last = sessionStorage.getItem('snz_admin_section'); } catch (e) {}
+                if (last && document.getElementById(last)) switchSection(last);
+                else switchSection('sec-overview');
+            })();
         <?php endif; ?>
         <?php if ($msg): ?>
             showNotification('success', 'SUCCESS', <?= json_encode($msg, JSON_HEX_TAG | JSON_HEX_APOS | JSON_UNESCAPED_UNICODE) ?>);
