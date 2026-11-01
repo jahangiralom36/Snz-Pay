@@ -221,6 +221,175 @@ if (!function_exists('snzEnsureDeviceColumns')) {
     }
 }
 snzEnsureDeviceColumns($pdo);
+// -------------------------------------------------------------------------
+// 📦 Plans / Devices / Brand Keys — টেবিল একবারই তৈরি হয় (.db_plans_v1)
+// -------------------------------------------------------------------------
+if (!function_exists('snzEnsurePlanSchema')) {
+    function snzRootDir() {
+        return basename(__DIR__) === 'api' ? dirname(__DIR__) : __DIR__;
+    }
+
+    function snzEnsurePlanSchema(PDO $pdo) {
+        $flag = snzRootDir() . '/.db_plans_v1';
+        if (is_file($flag)) return;
+        $sqls = [
+            "CREATE TABLE IF NOT EXISTS `plans` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `name` VARCHAR(100) NOT NULL,
+                `price` DECIMAL(10,2) NOT NULL DEFAULT 0,
+                `discount_percent` DECIMAL(5,2) NOT NULL DEFAULT 0,
+                `duration_hours` INT NOT NULL DEFAULT 720,
+                `max_devices` INT NOT NULL DEFAULT 1,
+                `max_brand_keys` INT NOT NULL DEFAULT 1,
+                `badge` VARCHAR(40) NULL,
+                `description` VARCHAR(255) NULL,
+                `is_trial` TINYINT(1) NOT NULL DEFAULT 0,
+                `status` VARCHAR(20) NOT NULL DEFAULT 'active',
+                `sort_order` INT NOT NULL DEFAULT 0,
+                `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `key_devices` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `key_id` INT NOT NULL,
+                `device_id` VARCHAR(100) NOT NULL,
+                `device_name` VARCHAR(150) NULL,
+                `bound_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                `last_seen_at` DATETIME NULL,
+                UNIQUE KEY `uq_key_device` (`key_id`, `device_id`),
+                KEY `idx_kd_key` (`key_id`)
+            ) DEFAULT CHARSET=utf8mb4",
+            "ALTER TABLE `user_keys` ADD COLUMN `plan_id` INT NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `max_devices` INT NOT NULL DEFAULT 1",
+            "ALTER TABLE `user_keys` ADD COLUMN `max_brand_keys` INT NOT NULL DEFAULT 1",
+            "ALTER TABLE `user_keys` ADD COLUMN `device_id` VARCHAR(100) NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `device_name` VARCHAR(150) NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `device_bound_at` DATETIME NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `last_seen_at` DATETIME NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `brand_name` VARCHAR(128) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `brand_type` VARCHAR(20) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `brand_link` VARCHAR(255) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `whatsapp` VARCHAR(30) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `bound_fingerprint` VARCHAR(255) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `bound_label` VARCHAR(255) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `bound_at` DATETIME NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `last_used_at` DATETIME NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `created_at` DATETIME NULL",
+        ];
+        foreach ($sqls as $sql) {
+            try { $pdo->exec($sql); } catch (Throwable $e) {}
+        }
+        // আগের ৩টা প্ল্যান
+        try {
+            if ((int) $pdo->query("SELECT COUNT(*) FROM plans")->fetchColumn() === 0) {
+                $ins = $pdo->prepare("INSERT INTO plans (name, price, discount_percent, duration_hours, max_devices, max_brand_keys, badge, description, is_trial, status, sort_order) VALUES (?, ?, 0, ?, 1, 1, ?, ?, ?, 'active', ?)");
+                $ins->execute(['Free Trial (30 Hours)', 0, 30, '1st Time Free', 'Test all automated features completely free of charge.', 1, 1]);
+                $ins->execute(['Standard Plan (30 BDT)', 30, 168, 'Standard', '7 days of uninterrupted SMS & Binance automation.', 0, 2]);
+                $ins->execute(['Premium Plan (50 BDT)', 50, 720, 'Popular Choice', 'Full 1 month of uninterrupted high-priority processing.', 0, 3]);
+            }
+        } catch (Throwable $e) {}
+        // আগে এক-ফোন লক করা কী গুলো নতুন ডিভাইস টেবিলে
+        try {
+            $pdo->exec("INSERT IGNORE INTO key_devices (key_id, device_id, device_name, bound_at, last_seen_at)
+                        SELECT id, device_id, device_name, COALESCE(device_bound_at, NOW()), last_seen_at
+                        FROM user_keys WHERE device_id IS NOT NULL AND device_id <> ''");
+        } catch (Throwable $e) {}
+        // পুরনো কী গুলোর plan_id (নাম মিলিয়ে)
+        try {
+            $pdo->exec("UPDATE user_keys uk JOIN plans p ON p.name = uk.plan_name SET uk.plan_id = p.id WHERE uk.plan_id IS NULL");
+        } catch (Throwable $e) {}
+        @file_put_contents($flag, date('c'));
+        snzWritePlansCache($pdo);
+    }
+
+    function snzGetPlans(PDO $pdo, $onlyActive = true) {
+        try {
+            $sql = "SELECT * FROM plans " . ($onlyActive ? "WHERE status = 'active' " : "") . "ORDER BY sort_order ASC, price ASC, id ASC";
+            return $pdo->query($sql)->fetchAll();
+        } catch (Throwable $e) {
+            return [];
+        }
+    }
+
+    function snzGetPlan(PDO $pdo, $id) {
+        try {
+            $st = $pdo->prepare("SELECT * FROM plans WHERE id = ? LIMIT 1");
+            $st->execute([(int) $id]);
+            return $st->fetch() ?: null;
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+
+    /** ডিসকাউন্টের পর আসল দাম */
+    function snzPlanFinalPrice(array $p) {
+        $price = (float) ($p['price'] ?? 0);
+        $disc = max(0, min(100, (float) ($p['discount_percent'] ?? 0)));
+        return round($price * (100 - $disc) / 100, 2);
+    }
+
+    function snzDurationLabel($hours) {
+        $hours = (int) $hours;
+        if ($hours > 0 && $hours % 24 === 0) {
+            $d = $hours / 24;
+            return $d . ($d == 1 ? ' Day' : ' Days');
+        }
+        return $hours . ($hours == 1 ? ' Hour' : ' Hours');
+    }
+
+    /** হোমপেজ যেন ডাটাবেজ ছাড়াই দ্রুত প্ল্যান দেখাতে পারে */
+    function snzWritePlansCache(PDO $pdo) {
+        @file_put_contents(snzRootDir() . '/plans_cache.json', json_encode(snzGetPlans($pdo, true), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    }
+
+    function snzReadPlansCache() {
+        $f = snzRootDir() . '/plans_cache.json';
+        if (!is_file($f)) return null;
+        $d = json_decode((string) @file_get_contents($f), true);
+        return is_array($d) ? $d : null;
+    }
+
+    /** কী অনুযায়ী কানেক্টেড ফোনের তালিকা: [key_id => [rows]] */
+    function snzKeyDevices(PDO $pdo, array $keyIds) {
+        $out = [];
+        $keyIds = array_values(array_filter(array_map('intval', $keyIds)));
+        if (!$keyIds) return $out;
+        try {
+            $in = implode(',', array_fill(0, count($keyIds), '?'));
+            $st = $pdo->prepare("SELECT * FROM key_devices WHERE key_id IN ($in) ORDER BY bound_at ASC");
+            $st->execute($keyIds);
+            foreach ($st->fetchAll() as $r) $out[(int) $r['key_id']][] = $r;
+        } catch (Throwable $e) {}
+        return $out;
+    }
+
+    /** ইউজার কয়টা Brand Key বানাতে পারবে (চালু প্ল্যান গুলোর যোগফল) আর কয়টা বানিয়েছে */
+    function snzBrandQuota(PDO $pdo, $userId) {
+        $limit = 0; $used = 0;
+        try {
+            $st = $pdo->prepare("SELECT COALESCE(SUM(GREATEST(max_brand_keys, 0)), 0) FROM user_keys WHERE user_id = ? AND status = 'active' AND expires_at > NOW()");
+            $st->execute([$userId]);
+            $limit = (int) $st->fetchColumn();
+            $st = $pdo->prepare("SELECT COUNT(*) FROM brand_keys WHERE user_id = ? AND status != 'revoked'");
+            $st->execute([$userId]);
+            $used = (int) $st->fetchColumn();
+        } catch (Throwable $e) {}
+        return ['limit' => $limit, 'used' => $used];
+    }
+
+    /** ইউজারের চালু প্ল্যানের সবচেয়ে দূরের মেয়াদ (না থাকলে null) */
+    function snzActivePlanExpiry(PDO $pdo, $userId) {
+        try {
+            $st = $pdo->prepare("SELECT MAX(expires_at) FROM user_keys WHERE user_id = ? AND status = 'active' AND expires_at > NOW()");
+            $st->execute([$userId]);
+            $v = $st->fetchColumn();
+            return $v ?: null;
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+}
+// -------------------------------------------------------------------------
+snzEnsurePlanSchema($pdo);
 
 // =========================================================================
 // Binance Pay সিঙ্ক (একটা ফাংশনে — live feed আর Add Fund দুই জায়গাতেই লাগে)
@@ -483,59 +652,55 @@ if (isset($_POST['action_add_fund'])) {
 // =========================================================================
 if (isset($_POST['action_buy_plan'])) {
     $activeTabTarget = "view-plans";
-    $planType = $_POST['plan_type'];
-    $price = 0; $hours = 0; $planName = "";
+    $buyPlan = snzGetPlan($pdo, intval($_POST['plan_id'] ?? 0));
 
-    if ($planType === 'free_trial') {
-        // Atomic: ডাবল ক্লিক করলেও একবারই ট্রায়াল
-        $trialUpd = $pdo->prepare("UPDATE users SET has_used_trial = 1 WHERE id = ? AND (has_used_trial = 0 OR has_used_trial IS NULL)");
-        $trialUpd->execute([$userId]);
-        if ($trialUpd->rowCount() === 0) {
-            $modalData = [
-                "title" => "Free Trial Already Used",
-                "message" => "You have already enjoyed your free trial access. Please select a standard or 30-day plan to continue using SNZPay.",
-                "type" => "warning",
-                "btn_text" => "Choose Plan",
-                "btn_action" => "switchView('view-plans')"
-            ];
+    if (!$buyPlan || $buyPlan['status'] !== 'active') {
+        $error = "This plan is not available.";
+    } else {
+        $price = snzPlanFinalPrice($buyPlan);
+        $hours = max(1, (int) $buyPlan['duration_hours']);
+        $planName = $buyPlan['name'];
+        $canCreate = false;
+
+        if (!empty($buyPlan['is_trial']) || $price <= 0) {
+            // ফ্রি ট্রায়াল — প্রতি ইউজার একবারই (Atomic)
+            $trialUpd = $pdo->prepare("UPDATE users SET has_used_trial = 1 WHERE id = ? AND (has_used_trial = 0 OR has_used_trial IS NULL)");
+            $trialUpd->execute([$userId]);
+            if ($trialUpd->rowCount() === 0) {
+                $modalData = [
+                    "title" => "Free Trial Already Used",
+                    "message" => "You have already enjoyed your free trial access. Please select a paid plan to continue.",
+                    "type" => "warning",
+                    "btn_text" => "Choose Plan",
+                    "btn_action" => "switchView('view-plans')"
+                ];
+            } else {
+                $user['has_used_trial'] = 1;
+                $canCreate = true;
+            }
         } else {
-            $hours = 30;
-            $planName = "Free Trial (30 Hours)";
-            $user['has_used_trial'] = 1;
-            
-            $licenseKey = generateLicenseKey();
-            $expiresAt = date("Y-m-d H:i:s", strtotime("+$hours hours"));
-            $pdo->prepare("INSERT INTO user_keys (user_id, license_key, plan_name, expires_at, status) VALUES (?, ?, ?, ?, 'active')")
-                ->execute([$userId, $licenseKey, $planName, $expiresAt]);
-            $msg = "Free Trial activated: $licenseKey";
-            $activeTabTarget = "view-my-plan";
+            // Atomic: ব্যালেন্স থাকলেই কাটবে (ডাবল ক্লিকে নেগেটিভ ব্যালেন্স হবে না)
+            $deduct = $pdo->prepare("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?");
+            $deduct->execute([$price, $userId, $price]);
+            if ($deduct->rowCount() === 0) {
+                $modalData = [
+                    "title" => "Insufficient Balance",
+                    "message" => "Your wallet balance is ৳ " . number_format(floatval($user['balance']), 2) . ". You need ৳ " . number_format($price, 2) . " to activate this plan.",
+                    "type" => "balance",
+                    "btn_text" => "+ Add Funds to Wallet",
+                    "btn_action" => "switchView('view-add-fund')"
+                ];
+            } else {
+                $user['balance'] = floatval($user['balance']) - $price;
+                $canCreate = true;
+            }
         }
-    } elseif ($planType === 'plan_30') {
-        $price = 30; $hours = 24 * 7; $planName = "Standard Plan (30 BDT)";
-    } elseif ($planType === 'plan_50') {
-        $price = 50; $hours = 24 * 30; $planName = "Premium Plan (50 BDT)";
-    }
 
-    if ($price > 0) {
-        // Atomic: ব্যালেন্স থাকলেই কাটবে (ডাবল ক্লিকে নেগেটিভ ব্যালেন্স হবে না)
-        $deduct = $pdo->prepare("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?");
-        $deduct->execute([$price, $userId, $price]);
-        if ($deduct->rowCount() === 0) {
-            $modalData = [
-                "title" => "Insufficient Balance",
-                "message" => "Your wallet balance is ৳ " . number_format(floatval($user['balance']), 2) . ". You need ৳ " . number_format($price, 2) . " to activate this plan.",
-                "type" => "balance",
-                "btn_text" => "+ Add Funds to Wallet",
-                "btn_action" => "switchView('view-add-fund')"
-            ];
-        } else {
-            $user['balance'] = floatval($user['balance']) - $price;
-
+        if ($canCreate) {
             $licenseKey = generateLicenseKey();
-            $expiresAt = date("Y-m-d H:i:s", strtotime("+$hours hours"));
-            $pdo->prepare("INSERT INTO user_keys (user_id, license_key, plan_name, expires_at, status) VALUES (?, ?, ?, ?, 'active')")
-                ->execute([$userId, $licenseKey, $planName, $expiresAt]);
-
+            $expiresAt = date("Y-m-d H:i:s", time() + $hours * 3600);
+            $pdo->prepare("INSERT INTO user_keys (user_id, license_key, plan_name, expires_at, status, plan_id, max_devices, max_brand_keys) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)")
+                ->execute([$userId, $licenseKey, $planName, $expiresAt, $buyPlan['id'], max(1, (int) $buyPlan['max_devices']), max(0, (int) $buyPlan['max_brand_keys'])]);
             $msg = "Plan activated: $licenseKey ($planName)";
             $activeTabTarget = "view-my-plan";
         }
@@ -551,6 +716,10 @@ if (isset($_POST['action_manual_renew'])) {
 
     if ($targetKey) {
         $planDetails = getPlanDetails($targetKey['plan_name']);
+        $renewPlan = !empty($targetKey['plan_id']) ? snzGetPlan($pdo, $targetKey['plan_id']) : null;
+        if ($renewPlan) {
+            $planDetails = ['price' => !empty($renewPlan['is_trial']) ? 0 : snzPlanFinalPrice($renewPlan), 'hours' => (int) $renewPlan['duration_hours'], 'name' => $renewPlan['name']];
+        }
         $renewCost = $planDetails['price'];
 
         $renewOk = true;
@@ -582,6 +751,10 @@ if (isset($_POST['action_manual_renew'])) {
             $user['balance'] = floatval($user['balance']) - $renewCost;
             $newExpiresAt = date("Y-m-d H:i:s", time() + ($planDetails['hours'] * 3600));
             $pdo->prepare("UPDATE user_keys SET expires_at = ?, status = 'active' WHERE id = ? AND user_id = ?")->execute([$newExpiresAt, $renewKeyId, $userId]);
+            if ($renewPlan) {
+                $pdo->prepare("UPDATE user_keys SET max_devices = ?, max_brand_keys = ? WHERE id = ? AND user_id = ?")
+                    ->execute([max(1, (int) $renewPlan['max_devices']), max(0, (int) $renewPlan['max_brand_keys']), $renewKeyId, $userId]);
+            }
             $msg = "Plan renewed successfully! Key is now Active.";
         }
     }
@@ -655,49 +828,61 @@ if (isset($_POST['action_add_custom_sms'])) {
 // =========================================================================
 // 5. Brands / Bot Key Generator
 // =========================================================================
-$bkStmt = $pdo->prepare("SELECT * FROM brand_keys WHERE user_id = ? AND status != 'revoked' ORDER BY id DESC LIMIT 1");
-$bkStmt->execute([$userId]);
-$userBrandKey = $bkStmt->fetch();
-
+// প্ল্যান অনুযায়ী যতগুলো Brand Key (যেমন ৫টা কী এর প্ল্যান হলে ৫টা)
 if (isset($_POST['action_generate_brand_key'])) {
     $activeTabTarget = "view-brands";
-    $planCheck = $pdo->prepare("SELECT COUNT(*) FROM user_keys WHERE user_id = ? AND status = 'active' AND expires_at > NOW()");
-    $planCheck->execute([$userId]);
-    $activePlanCount = intval($planCheck->fetchColumn());
+    $quota = snzBrandQuota($pdo, $userId);
+    $brandName = mb_substr(trim($_POST['brand_name'] ?? ''), 0, 100);
+    $brandType = in_array($_POST['brand_type'] ?? '', ['website', 'app', 'bot'], true) ? $_POST['brand_type'] : '';
+    $brandLink = mb_substr(trim($_POST['brand_link'] ?? ''), 0, 255);
+    $whatsapp = preg_replace('/[^0-9+]/', '', (string) ($_POST['brand_whatsapp'] ?? ''));
 
-    if ($activePlanCount <= 0) {
+    if ($quota['limit'] <= 0) {
         $modalData = [
             "title" => "No Active Plan Found",
-            "message" => "You must purchase an active subscription plan first before creating a Bot Key.",
+            "message" => "You must purchase an active subscription plan first before creating a Brand Key.",
             "type" => "warning",
             "btn_text" => "View Plans",
             "btn_action" => "switchView('view-plans')"
         ];
-    } elseif ($userBrandKey) {
-        $error = "You already have an active Bot Connection Key!";
+    } elseif ($quota['used'] >= $quota['limit']) {
+        $modalData = [
+            "title" => "Brand Key Limit Reached",
+            "message" => "Your plan allows " . $quota['limit'] . " brand key(s) and you have used all of them. Revoke an old key or buy a bigger plan.",
+            "type" => "warning",
+            "btn_text" => "View Plans",
+            "btn_action" => "switchView('view-plans')"
+        ];
+    } elseif ($brandName === '' || $brandType === '' || $brandLink === '' || strlen($whatsapp) < 10) {
+        $error = "Please fill Brand Name, Type, Link/Username and a valid WhatsApp number.";
     } else {
-        $brandName = mb_substr(trim($_POST['brand_name'] ?? '') ?: 'Store Bot', 0, 100);
         $newBotKey = "SNZ-BOT-" . strtoupper(bin2hex(random_bytes(6)));
-
-        $pdo->prepare("INSERT INTO brand_keys (user_id, brand_name, api_key, plan_duration_hours, status) VALUES (?, ?, ?, 720, 'unlinked')")
-            ->execute([$userId, $brandName, $newBotKey]);
-
-        $msg = "Bot Key generated! Expiry countdown begins upon first verification.";
+        $pdo->prepare("INSERT INTO brand_keys (user_id, brand_name, brand_type, brand_link, whatsapp, api_key, plan_duration_hours, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 720, 'unlinked', NOW())")
+            ->execute([$userId, $brandName, $brandType, $brandLink, $whatsapp, $newBotKey]);
+        $msg = "Brand key created for {$brandName}! It locks to the first website/app/bot that uses it.";
     }
+}
+
+// অন্য জায়গায় লাগানোর জন্য কানেকশন খুলে দেওয়া
+if (isset($_POST['action_disconnect_brand_key'])) {
+    $activeTabTarget = "view-brands";
+    $pdo->prepare("UPDATE brand_keys SET bound_fingerprint = NULL, bound_label = NULL, bound_at = NULL, is_connected = 0 WHERE id = ? AND user_id = ?")
+        ->execute([intval($_POST['brand_key_id'] ?? 0), $userId]);
+    $msg = "Brand key disconnected. Use it in your new website/app/bot — it will connect there automatically.";
 }
 
 if (isset($_POST['action_revoke_brand_key'])) {
     $activeTabTarget = "view-brands";
     $rKeyId = intval($_POST['revoke_key_id']);
     $pdo->prepare("UPDATE brand_keys SET status = 'revoked' WHERE id = ? AND user_id = ?")->execute([$rKeyId, $userId]);
-    $msg = "Bot Key revoked successfully.";
+    $msg = "Brand key revoked successfully.";
 }
 
-// অ্যাকশনের পর নতুন অবস্থা দেখানো (আগে Refresh:0 দিয়ে পুরো পেজ দুইবার লোড হত)
-if (isset($_POST['action_generate_brand_key']) || isset($_POST['action_revoke_brand_key'])) {
-    $bkStmt->execute([$userId]);
-    $userBrandKey = $bkStmt->fetch();
-}
+$bkStmt = $pdo->prepare("SELECT * FROM brand_keys WHERE user_id = ? AND status != 'revoked' ORDER BY id DESC");
+$bkStmt->execute([$userId]);
+$userBrandKeys = $bkStmt->fetchAll();
+$userBrandKey = $userBrandKeys[0] ?? null;   // পুরনো কোডের সাথে মিল রাখতে
+$brandQuota = snzBrandQuota($pdo, $userId);
 
 // =========================================================================
 // 6. Wallet Setup Actions (MFS, Bank, QR Direct Upload, Binance)
@@ -830,12 +1015,15 @@ foreach ($userWallets as $uw) {
 }
 
 $allUserKeys = [];
+$keyDevicesMap = [];
+$allPlans = snzGetPlans($pdo, true);
 $activeKeys = [];
 $deactivatedKeys = [];
 try {
     $kStmt = $pdo->prepare("SELECT * FROM user_keys WHERE user_id = ? ORDER BY id DESC");
     $kStmt->execute([$userId]);
     $allUserKeys = $kStmt->fetchAll();
+    $keyDevicesMap = snzKeyDevices($pdo, array_column($allUserKeys, 'id'));
 
     foreach ($allUserKeys as $k) {
         if (strtotime($k['expires_at']) >= time()) {
@@ -878,7 +1066,7 @@ try {
     <title><?= htmlspecialchars($SITE_NAME) ?> - Dashboard</title>
 
     <!-- Pre-built Tailwind CSS (CDN script এর বদলে — অনেক দ্রুত) -->
-    <style>*,:after,:before{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgba(59,130,246,.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }::backdrop{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgba(59,130,246,.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }/*! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com*/*,:after,:before{box-sizing:border-box;border:0 solid #e5e7eb}:after,:before{--tw-content:""}:host,html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;-o-tab-size:4;tab-size:4;font-family:ui-sans-serif,system-ui,sans-serif,Apple Color Emoji,Segoe UI Emoji,Segoe UI Symbol,Noto Color Emoji;font-feature-settings:normal;font-variation-settings:normal;-webkit-tap-highlight-color:transparent}body{margin:0;line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace;font-feature-settings:normal;font-variation-settings:normal;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-feature-settings:inherit;font-variation-settings:inherit;font-size:100%;font-weight:inherit;line-height:inherit;letter-spacing:inherit;color:inherit;margin:0;padding:0}button,select{text-transform:none}button,input:where([type=button]),input:where([type=reset]),input:where([type=submit]){-webkit-appearance:button;background-color:transparent;background-image:none}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,figure,h1,h2,h3,h4,h5,h6,hr,p,pre{margin:0}fieldset{margin:0}fieldset,legend{padding:0}menu,ol,ul{list-style:none;margin:0;padding:0}dialog{padding:0}textarea{resize:vertical}input::-moz-placeholder,textarea::-moz-placeholder{opacity:1;color:#9ca3af}input::placeholder,textarea::placeholder{opacity:1;color:#9ca3af}[role=button],button{cursor:pointer}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block;vertical-align:middle}img,video{max-width:100%;height:auto}[hidden]:where(:not([hidden=until-found])){display:none}.\!container{width:100%!important}.container{width:100%}@media (min-width:640px){.\!container{max-width:640px!important}.container{max-width:640px}}@media (min-width:768px){.\!container{max-width:768px!important}.container{max-width:768px}}@media (min-width:1024px){.\!container{max-width:1024px!important}.container{max-width:1024px}}@media (min-width:1280px){.\!container{max-width:1280px!important}.container{max-width:1280px}}@media (min-width:1536px){.\!container{max-width:1536px!important}.container{max-width:1536px}}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border-width:0}.pointer-events-none{pointer-events:none}.static{position:static}.fixed{position:fixed}.absolute{position:absolute}.relative{position:relative}.sticky{position:sticky}.inset-0{inset:0}.bottom-0{bottom:0}.left-0{left:0}.left-1{left:.25rem}.left-1\/2{left:50%}.left-4{left:1rem}.right-0{right:0}.right-4{right:1rem}.right-5{right:1.25rem}.right-6{right:1.5rem}.top-0{top:0}.top-3{top:.75rem}.top-3\.5{top:.875rem}.top-5{top:1.25rem}.top-\[65px\]{top:65px}.z-30{z-index:30}.z-40{z-index:40}.z-50{z-index:50}.z-\[60\]{z-index:60}.z-\[70\]{z-index:70}.mx-auto{margin-left:auto;margin-right:auto}.my-3{margin-top:.75rem;margin-bottom:.75rem}.my-4{margin-top:1rem;margin-bottom:1rem}.-mt-0{margin-top:0}.-mt-0\.5{margin-top:-.125rem}.mb-1{margin-bottom:.25rem}.mb-1\.5{margin-bottom:.375rem}.mb-10{margin-bottom:2.5rem}.mb-2{margin-bottom:.5rem}.mb-3{margin-bottom:.75rem}.mb-4{margin-bottom:1rem}.mb-5{margin-bottom:1.25rem}.mb-6{margin-bottom:1.5rem}.ml-auto{margin-left:auto}.mr-1{margin-right:.25rem}.mr-1\.5{margin-right:.375rem}.mt-0{margin-top:0}.mt-0\.5{margin-top:.125rem}.mt-1{margin-top:.25rem}.mt-1\.5{margin-top:.375rem}.mt-2{margin-top:.5rem}.mt-3{margin-top:.75rem}.mt-4{margin-top:1rem}.mt-5{margin-top:1.25rem}.mt-6{margin-top:1.5rem}.block{display:block}.flex{display:flex}.inline-flex{display:inline-flex}.table{display:table}.grid{display:grid}.hidden{display:none}.h-10{height:2.5rem}.h-11{height:2.75rem}.h-12{height:3rem}.h-14{height:3.5rem}.h-16{height:4rem}.h-2{height:.5rem}.h-2\.5{height:.625rem}.h-20{height:5rem}.h-36{height:9rem}.h-48{height:12rem}.h-5{height:1.25rem}.h-6{height:1.5rem}.h-8{height:2rem}.h-9{height:2.25rem}.h-full{height:100%}.min-h-screen{min-height:100vh}.w-1{width:.25rem}.w-1\/2{width:50%}.w-10{width:2.5rem}.w-11{width:2.75rem}.w-12{width:3rem}.w-14{width:3.5rem}.w-16{width:4rem}.w-20{width:5rem}.w-4{width:1rem}.w-48{width:12rem}.w-5{width:1.25rem}.w-6{width:1.5rem}.w-72{width:18rem}.w-8{width:2rem}.w-9{width:2.25rem}.w-\[90\%\]{width:90%}.w-full{width:100%}.min-w-0{min-width:0}.max-w-2xl{max-width:42rem}.max-w-4xl{max-width:56rem}.max-w-6xl{max-width:72rem}.max-w-lg{max-width:32rem}.max-w-md{max-width:28rem}.max-w-sm{max-width:24rem}.max-w-xl{max-width:36rem}.max-w-xs{max-width:20rem}.flex-1{flex:1 1 0%}.shrink-0{flex-shrink:0}.-translate-x-1{--tw-translate-x:-0.25rem}.-translate-x-1,.-translate-x-1\/2{transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.-translate-x-1\/2{--tw-translate-x:-50%}.-translate-x-full{--tw-translate-x:-100%}.-translate-x-full,.-translate-y-8{transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.-translate-y-8{--tw-translate-y:-2rem}.translate-x-full{--tw-translate-x:100%}.translate-x-full,.translate-y-0{transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.translate-y-0{--tw-translate-y:0px}.transform{transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}@keyframes bounce{0%,to{transform:translateY(-25%);animation-timing-function:cubic-bezier(.8,0,1,1)}50%{transform:none;animation-timing-function:cubic-bezier(0,0,.2,1)}}.animate-bounce{animation:bounce 1s infinite}@keyframes pulse{50%{opacity:.5}}.animate-pulse{animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite}.cursor-not-allowed{cursor:not-allowed}.cursor-pointer{cursor:pointer}.select-all{-webkit-user-select:all;-moz-user-select:all;user-select:all}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.flex-col{flex-direction:column}.flex-wrap{flex-wrap:wrap}.items-start{align-items:flex-start}.items-center{align-items:center}.items-stretch{align-items:stretch}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.gap-1{gap:.25rem}.gap-1\.5{gap:.375rem}.gap-10{gap:2.5rem}.gap-2{gap:.5rem}.gap-2\.5{gap:.625rem}.gap-3{gap:.75rem}.gap-3\.5{gap:.875rem}.gap-4{gap:1rem}.gap-5{gap:1.25rem}.gap-6{gap:1.5rem}.gap-8{gap:2rem}.space-y-1>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.25rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.25rem*var(--tw-space-y-reverse))}.space-y-1\.5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.375rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.375rem*var(--tw-space-y-reverse))}.space-y-2>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.5rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.5rem*var(--tw-space-y-reverse))}.space-y-2\.5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.625rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.625rem*var(--tw-space-y-reverse))}.space-y-3>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.75rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.75rem*var(--tw-space-y-reverse))}.space-y-3\.5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.875rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.875rem*var(--tw-space-y-reverse))}.space-y-4>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1rem*var(--tw-space-y-reverse))}.space-y-5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1.25rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1.25rem*var(--tw-space-y-reverse))}.space-y-6>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1.5rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1.5rem*var(--tw-space-y-reverse))}.divide-y>:not([hidden])~:not([hidden]){--tw-divide-y-reverse:0;border-top-width:calc(1px*(1 - var(--tw-divide-y-reverse)));border-bottom-width:calc(1px*var(--tw-divide-y-reverse))}.divide-\[\#0d265c\]>:not([hidden])~:not([hidden]){--tw-divide-opacity:1;border-color:rgb(13 38 92/var(--tw-divide-opacity,1))}.divide-\[\#0e275c\]>:not([hidden])~:not([hidden]){--tw-divide-opacity:1;border-color:rgb(14 39 92/var(--tw-divide-opacity,1))}.overflow-hidden{overflow:hidden}.overflow-x-auto{overflow-x:auto}.overflow-x-hidden{overflow-x:hidden}.truncate{overflow:hidden;text-overflow:ellipsis}.truncate,.whitespace-nowrap{white-space:nowrap}.break-all{word-break:break-all}.rounded-2xl{border-radius:1rem}.rounded-3xl{border-radius:1.5rem}.rounded-full{border-radius:9999px}.rounded-lg{border-radius:.5rem}.rounded-md{border-radius:.375rem}.rounded-xl{border-radius:.75rem}.border{border-width:1px}.border-2{border-width:2px}.border-b{border-bottom-width:1px}.border-l{border-left-width:1px}.border-r{border-right-width:1px}.border-t{border-top-width:1px}.border-dashed{border-style:dashed}.border-\[\#007BFF\]\/30{border-color:rgba(0,123,255,.3)}.border-\[\#007BFF\]\/40{border-color:rgba(0,123,255,.4)}.border-\[\#007BFF\]\/50{border-color:rgba(0,123,255,.5)}.border-\[\#00D89A\]\/20{border-color:rgba(0,216,154,.2)}.border-\[\#00D89A\]\/30{border-color:rgba(0,216,154,.3)}.border-\[\#00D89A\]\/40{border-color:rgba(0,216,154,.4)}.border-\[\#00D89A\]\/50{border-color:rgba(0,216,154,.5)}.border-\[\#00D9FF\]{--tw-border-opacity:1;border-color:rgb(0 217 255/var(--tw-border-opacity,1))}.border-\[\#00D9FF\]\/20{border-color:rgba(0,217,255,.2)}.border-\[\#00D9FF\]\/30{border-color:rgba(0,217,255,.3)}.border-\[\#00D9FF\]\/40{border-color:rgba(0,217,255,.4)}.border-\[\#00D9FF\]\/50{border-color:rgba(0,217,255,.5)}.border-\[\#0d265c\]{--tw-border-opacity:1;border-color:rgb(13 38 92/var(--tw-border-opacity,1))}.border-\[\#0d2a63\]{--tw-border-opacity:1;border-color:rgb(13 42 99/var(--tw-border-opacity,1))}.border-\[\#0e275c\]{--tw-border-opacity:1;border-color:rgb(14 39 92/var(--tw-border-opacity,1))}.border-\[\#0e306e\]{--tw-border-opacity:1;border-color:rgb(14 48 110/var(--tw-border-opacity,1))}.border-\[\#10326f\]{--tw-border-opacity:1;border-color:rgb(16 50 111/var(--tw-border-opacity,1))}.border-\[\#123982\]{--tw-border-opacity:1;border-color:rgb(18 57 130/var(--tw-border-opacity,1))}.border-\[\#143985\]{--tw-border-opacity:1;border-color:rgb(20 57 133/var(--tw-border-opacity,1))}.border-\[\#16418f\]{--tw-border-opacity:1;border-color:rgb(22 65 143/var(--tw-border-opacity,1))}.border-\[\#174396\]{--tw-border-opacity:1;border-color:rgb(23 67 150/var(--tw-border-opacity,1))}.border-amber-500{--tw-border-opacity:1;border-color:rgb(245 158 11/var(--tw-border-opacity,1))}.border-amber-500\/30{border-color:rgba(245,158,11,.3)}.border-amber-500\/40{border-color:rgba(245,158,11,.4)}.border-rose-500{--tw-border-opacity:1;border-color:rgb(244 63 94/var(--tw-border-opacity,1))}.border-rose-500\/40{border-color:rgba(244,63,94,.4)}.border-slate-700{--tw-border-opacity:1;border-color:rgb(51 65 85/var(--tw-border-opacity,1))}.bg-\[\#007BFF\]{--tw-bg-opacity:1;background-color:rgb(0 123 255/var(--tw-bg-opacity,1))}.bg-\[\#007BFF\]\/20{background-color:rgba(0,123,255,.2)}.bg-\[\#00D89A\]\/10{background-color:rgba(0,216,154,.1)}.bg-\[\#00D89A\]\/15{background-color:rgba(0,216,154,.15)}.bg-\[\#00D89A\]\/20{background-color:rgba(0,216,154,.2)}.bg-\[\#00D9FF\]\/10{background-color:rgba(0,217,255,.1)}.bg-\[\#00D9FF\]\/15{background-color:rgba(0,217,255,.15)}.bg-\[\#00D9FF\]\/20{background-color:rgba(0,217,255,.2)}.bg-\[\#020817\]{--tw-bg-opacity:1;background-color:rgb(2 8 23/var(--tw-bg-opacity,1))}.bg-\[\#020817\]\/80{background-color:rgba(2,8,23,.8)}.bg-\[\#020817\]\/85{background-color:rgba(2,8,23,.85)}.bg-\[\#030d24\]\/95{background-color:rgba(3,13,36,.95)}.bg-\[\#03132e\]{--tw-bg-opacity:1;background-color:rgb(3 19 46/var(--tw-bg-opacity,1))}.bg-\[\#040e24\]{--tw-bg-opacity:1;background-color:rgb(4 14 36/var(--tw-bg-opacity,1))}.bg-\[\#04122d\]{--tw-bg-opacity:1;background-color:rgb(4 18 45/var(--tw-bg-opacity,1))}.bg-\[\#05112b\]\/95{background-color:rgba(5,17,43,.95)}.bg-\[\#051433\]{--tw-bg-opacity:1;background-color:rgb(5 20 51/var(--tw-bg-opacity,1))}.bg-\[\#051433\]\/90{background-color:rgba(5,20,51,.9)}.bg-\[\#051433\]\/95{background-color:rgba(5,20,51,.95)}.bg-\[\#061535\]{--tw-bg-opacity:1;background-color:rgb(6 21 53/var(--tw-bg-opacity,1))}.bg-\[\#061535\]\/80{background-color:rgba(6,21,53,.8)}.bg-\[\#061535\]\/85{background-color:rgba(6,21,53,.85)}.bg-\[\#061535\]\/90{background-color:rgba(6,21,53,.9)}.bg-\[\#071638\]{--tw-bg-opacity:1;background-color:rgb(7 22 56/var(--tw-bg-opacity,1))}.bg-\[\#081b42\]\/95{background-color:rgba(8,27,66,.95)}.bg-\[\#081e4b\]{--tw-bg-opacity:1;background-color:rgb(8 30 75/var(--tw-bg-opacity,1))}.bg-\[\#09204e\]{--tw-bg-opacity:1;background-color:rgb(9 32 78/var(--tw-bg-opacity,1))}.bg-\[\#092257\]{--tw-bg-opacity:1;background-color:rgb(9 34 87/var(--tw-bg-opacity,1))}.bg-\[\#0a1e4a\]{--tw-bg-opacity:1;background-color:rgb(10 30 74/var(--tw-bg-opacity,1))}.bg-\[\#0a2356\]{--tw-bg-opacity:1;background-color:rgb(10 35 86/var(--tw-bg-opacity,1))}.bg-\[\#0c2454\]{--tw-bg-opacity:1;background-color:rgb(12 36 84/var(--tw-bg-opacity,1))}.bg-\[\#35F58A\]\/15{background-color:rgba(53,245,138,.15)}.bg-\[\#35F58A\]\/20{background-color:rgba(53,245,138,.2)}.bg-\[\#8B5CF6\]\/20{background-color:rgba(139,92,246,.2)}.bg-amber-500{--tw-bg-opacity:1;background-color:rgb(245 158 11/var(--tw-bg-opacity,1))}.bg-amber-500\/10{background-color:rgba(245,158,11,.1)}.bg-amber-500\/15{background-color:rgba(245,158,11,.15)}.bg-amber-500\/20{background-color:rgba(245,158,11,.2)}.bg-black{--tw-bg-opacity:1;background-color:rgb(0 0 0/var(--tw-bg-opacity,1))}.bg-black\/80{background-color:rgba(0,0,0,.8)}.bg-rose-500{--tw-bg-opacity:1;background-color:rgb(244 63 94/var(--tw-bg-opacity,1))}.bg-rose-500\/20{background-color:rgba(244,63,94,.2)}.bg-slate-700{--tw-bg-opacity:1;background-color:rgb(51 65 85/var(--tw-bg-opacity,1))}.bg-slate-800{--tw-bg-opacity:1;background-color:rgb(30 41 59/var(--tw-bg-opacity,1))}.bg-transparent{background-color:transparent}.bg-white{--tw-bg-opacity:1;background-color:rgb(255 255 255/var(--tw-bg-opacity,1))}.bg-gradient-to-br{background-image:linear-gradient(to bottom right,var(--tw-gradient-stops))}.from-\[\#081d49\]{--tw-gradient-from:#081d49 var(--tw-gradient-from-position);--tw-gradient-to:rgba(8,29,73,0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}.via-\[\#092257\]{--tw-gradient-to:rgba(9,34,87,0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),#092257 var(--tw-gradient-via-position),var(--tw-gradient-to)}.to-\[\#04112c\]{--tw-gradient-to:#04112c var(--tw-gradient-to-position)}.object-contain{-o-object-fit:contain;object-fit:contain}.p-1{padding:.25rem}.p-1\.5{padding:.375rem}.p-2{padding:.5rem}.p-3{padding:.75rem}.p-3\.5{padding:.875rem}.p-4{padding:1rem}.p-5{padding:1.25rem}.p-6{padding:1.5rem}.p-8{padding:2rem}.px-1\.5{padding-left:.375rem;padding-right:.375rem}.px-2{padding-left:.5rem;padding-right:.5rem}.px-2\.5{padding-left:.625rem;padding-right:.625rem}.px-3{padding-left:.75rem;padding-right:.75rem}.px-3\.5{padding-left:.875rem;padding-right:.875rem}.px-4{padding-left:1rem;padding-right:1rem}.px-5{padding-left:1.25rem;padding-right:1.25rem}.px-7{padding-left:1.75rem;padding-right:1.75rem}.py-0{padding-top:0;padding-bottom:0}.py-0\.5{padding-top:.125rem;padding-bottom:.125rem}.py-1{padding-top:.25rem;padding-bottom:.25rem}.py-1\.5{padding-top:.375rem;padding-bottom:.375rem}.py-10{padding-top:2.5rem;padding-bottom:2.5rem}.py-12{padding-top:3rem;padding-bottom:3rem}.py-2{padding-top:.5rem;padding-bottom:.5rem}.py-2\.5{padding-top:.625rem;padding-bottom:.625rem}.py-3{padding-top:.75rem;padding-bottom:.75rem}.py-3\.5{padding-top:.875rem;padding-bottom:.875rem}.py-8{padding-top:2rem;padding-bottom:2rem}.pb-3{padding-bottom:.75rem}.pb-4{padding-bottom:1rem}.pb-5{padding-bottom:1.25rem}.pl-11{padding-left:2.75rem}.pr-11{padding-right:2.75rem}.pr-2{padding-right:.5rem}.pr-4{padding-right:1rem}.pt-0{padding-top:0}.pt-0\.5{padding-top:.125rem}.pt-2{padding-top:.5rem}.pt-2\.5{padding-top:.625rem}.pt-3{padding-top:.75rem}.pt-6{padding-top:1.5rem}.text-left{text-align:left}.text-center{text-align:center}.text-right{text-align:right}.font-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace}.font-sans{font-family:ui-sans-serif,system-ui,sans-serif,Apple Color Emoji,Segoe UI Emoji,Segoe UI Symbol,Noto Color Emoji}.text-2xl{font-size:1.5rem;line-height:2rem}.text-3xl{font-size:1.875rem;line-height:2.25rem}.text-4xl{font-size:2.25rem;line-height:2.5rem}.text-\[10px\]{font-size:10px}.text-\[11px\]{font-size:11px}.text-\[6px\]{font-size:6px}.text-\[9px\]{font-size:9px}.text-base{font-size:1rem;line-height:1.5rem}.text-lg{font-size:1.125rem;line-height:1.75rem}.text-sm{font-size:.875rem;line-height:1.25rem}.text-xl{font-size:1.25rem;line-height:1.75rem}.text-xs{font-size:.75rem;line-height:1rem}.font-black{font-weight:900}.font-bold{font-weight:700}.font-medium{font-weight:500}.font-semibold{font-weight:600}.uppercase{text-transform:uppercase}.leading-relaxed{line-height:1.625}.leading-tight{line-height:1.25}.tracking-wide{letter-spacing:.025em}.tracking-wider{letter-spacing:.05em}.tracking-widest{letter-spacing:.1em}.text-\[\#007BFF\]{--tw-text-opacity:1;color:rgb(0 123 255/var(--tw-text-opacity,1))}.text-\[\#00D89A\]{--tw-text-opacity:1;color:rgb(0 216 154/var(--tw-text-opacity,1))}.text-\[\#00D89A\]\/20{color:rgba(0,216,154,.2)}.text-\[\#00D9FF\]{--tw-text-opacity:1;color:rgb(0 217 255/var(--tw-text-opacity,1))}.text-\[\#00D9FF\]\/20{color:rgba(0,217,255,.2)}.text-\[\#020817\]{--tw-text-opacity:1;color:rgb(2 8 23/var(--tw-text-opacity,1))}.text-\[\#0284C7\]{--tw-text-opacity:1;color:rgb(2 132 199/var(--tw-text-opacity,1))}.text-\[\#061535\]{--tw-text-opacity:1;color:rgb(6 21 53/var(--tw-text-opacity,1))}.text-\[\#35F58A\]{--tw-text-opacity:1;color:rgb(53 245 138/var(--tw-text-opacity,1))}.text-\[\#35F58A\]\/20{color:rgba(53,245,138,.2)}.text-\[\#38BDF8\]{--tw-text-opacity:1;color:rgb(56 189 248/var(--tw-text-opacity,1))}.text-\[\#7C3AED\]{--tw-text-opacity:1;color:rgb(124 58 237/var(--tw-text-opacity,1))}.text-\[\#8B5CF6\]{--tw-text-opacity:1;color:rgb(139 92 246/var(--tw-text-opacity,1))}.text-\[\#E2136E\]{--tw-text-opacity:1;color:rgb(226 19 110/var(--tw-text-opacity,1))}.text-\[\#EA580C\]{--tw-text-opacity:1;color:rgb(234 88 12/var(--tw-text-opacity,1))}.text-\[\#F5F8FC\]{--tw-text-opacity:1;color:rgb(245 248 252/var(--tw-text-opacity,1))}.text-\[\#FBBF24\],.text-amber-400{--tw-text-opacity:1;color:rgb(251 191 36/var(--tw-text-opacity,1))}.text-cyan-400{--tw-text-opacity:1;color:rgb(34 211 238/var(--tw-text-opacity,1))}.text-emerald-400{--tw-text-opacity:1;color:rgb(52 211 153/var(--tw-text-opacity,1))}.text-rose-400{--tw-text-opacity:1;color:rgb(251 113 133/var(--tw-text-opacity,1))}.text-slate-200{--tw-text-opacity:1;color:rgb(226 232 240/var(--tw-text-opacity,1))}.text-slate-300{--tw-text-opacity:1;color:rgb(203 213 225/var(--tw-text-opacity,1))}.text-slate-400{--tw-text-opacity:1;color:rgb(148 163 184/var(--tw-text-opacity,1))}.text-slate-500{--tw-text-opacity:1;color:rgb(100 116 139/var(--tw-text-opacity,1))}.text-white{--tw-text-opacity:1;color:rgb(255 255 255/var(--tw-text-opacity,1))}.opacity-0{opacity:0}.opacity-100{opacity:1}.opacity-50{opacity:.5}.shadow-2xl{--tw-shadow:0 25px 50px -12px rgba(0,0,0,.25);--tw-shadow-colored:0 25px 50px -12px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_10px_rgba\(0\2c 123\2c 255\2c 0\.4\)\]{--tw-shadow:0 0 10px rgba(0,123,255,.4);--tw-shadow-colored:0 0 10px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_10px_rgba\(0\2c 216\2c 154\2c 0\.4\)\]{--tw-shadow:0 0 10px rgba(0,216,154,.4);--tw-shadow-colored:0 0 10px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_10px_rgba\(0\2c 217\2c 255\2c 0\.2\)\]{--tw-shadow:0 0 10px rgba(0,217,255,.2);--tw-shadow-colored:0 0 10px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_10px_rgba\(0\2c 217\2c 255\2c 0\.4\)\]{--tw-shadow:0 0 10px rgba(0,217,255,.4);--tw-shadow-colored:0 0 10px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_10px_rgba\(139\2c 92\2c 246\2c 0\.4\)\]{--tw-shadow:0 0 10px rgba(139,92,246,.4);--tw-shadow-colored:0 0 10px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_15px_rgba\(0\2c 217\2c 255\2c 0\.1\)\]{--tw-shadow:0 0 15px rgba(0,217,255,.1);--tw-shadow-colored:0 0 15px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_15px_rgba\(0\2c 217\2c 255\2c 0\.15\)\]{--tw-shadow:0 0 15px rgba(0,217,255,.15);--tw-shadow-colored:0 0 15px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_20px_rgba\(0\2c 217\2c 255\2c 0\.12\)\]{--tw-shadow:0 0 20px rgba(0,217,255,.12);--tw-shadow-colored:0 0 20px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_20px_rgba\(0\2c 217\2c 255\2c 0\.4\)\]{--tw-shadow:0 0 20px rgba(0,217,255,.4);--tw-shadow-colored:0 0 20px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_25px_rgba\(0\2c 217\2c 255\2c 0\.3\)\]{--tw-shadow:0 0 25px rgba(0,217,255,.3);--tw-shadow-colored:0 0 25px var(--tw-shadow-color)}.shadow-\[0_0_25px_rgba\(0\2c 217\2c 255\2c 0\.3\)\],.shadow-lg{box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-lg{--tw-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1);--tw-shadow-colored:0 10px 15px -3px var(--tw-shadow-color),0 4px 6px -4px var(--tw-shadow-color)}.shadow-md{--tw-shadow:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -2px rgba(0,0,0,.1);--tw-shadow-colored:0 4px 6px -1px var(--tw-shadow-color),0 2px 4px -2px var(--tw-shadow-color)}.shadow-md,.shadow-sm{box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-sm{--tw-shadow:0 1px 2px 0 rgba(0,0,0,.05);--tw-shadow-colored:0 1px 2px 0 var(--tw-shadow-color)}.shadow-xl{--tw-shadow:0 20px 25px -5px rgba(0,0,0,.1),0 8px 10px -6px rgba(0,0,0,.1);--tw-shadow-colored:0 20px 25px -5px var(--tw-shadow-color),0 8px 10px -6px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-black{--tw-shadow-color:#000;--tw-shadow:var(--tw-shadow-colored)}.shadow-black\/40{--tw-shadow-color:rgba(0,0,0,.4);--tw-shadow:var(--tw-shadow-colored)}.shadow-cyan-500{--tw-shadow-color:#06b6d4;--tw-shadow:var(--tw-shadow-colored)}.shadow-cyan-500\/10{--tw-shadow-color:rgba(6,182,212,.1);--tw-shadow:var(--tw-shadow-colored)}.shadow-cyan-500\/20{--tw-shadow-color:rgba(6,182,212,.2);--tw-shadow:var(--tw-shadow-colored)}.shadow-cyan-500\/25{--tw-shadow-color:rgba(6,182,212,.25);--tw-shadow:var(--tw-shadow-colored)}.shadow-cyan-900{--tw-shadow-color:#164e63;--tw-shadow:var(--tw-shadow-colored)}.shadow-cyan-900\/10{--tw-shadow-color:rgba(22,78,99,.1);--tw-shadow:var(--tw-shadow-colored)}.backdrop-blur-2xl{--tw-backdrop-blur:blur(40px)}.backdrop-blur-2xl,.backdrop-blur-lg{-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.backdrop-blur-lg{--tw-backdrop-blur:blur(16px)}.backdrop-blur-md{--tw-backdrop-blur:blur(12px)}.backdrop-blur-md,.backdrop-blur-sm{-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.backdrop-blur-sm{--tw-backdrop-blur:blur(4px)}.backdrop-blur-xl{--tw-backdrop-blur:blur(24px);-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.transition{transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,-webkit-backdrop-filter;transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,backdrop-filter;transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,backdrop-filter,-webkit-backdrop-filter;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.transition-all{transition-property:all;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.transition-opacity{transition-property:opacity;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.transition-transform{transition-property:transform;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.duration-200{transition-duration:.2s}.duration-300{transition-duration:.3s}.ease-in-out{transition-timing-function:cubic-bezier(.4,0,.2,1)}.selection\:bg-\[\#00D9FF\] ::-moz-selection{--tw-bg-opacity:1;background-color:rgb(0 217 255/var(--tw-bg-opacity,1))}.selection\:bg-\[\#00D9FF\] ::selection{--tw-bg-opacity:1;background-color:rgb(0 217 255/var(--tw-bg-opacity,1))}.selection\:text-\[\#020817\] ::-moz-selection{--tw-text-opacity:1;color:rgb(2 8 23/var(--tw-text-opacity,1))}.selection\:text-\[\#020817\] ::selection{--tw-text-opacity:1;color:rgb(2 8 23/var(--tw-text-opacity,1))}.selection\:text-\[\#061535\] ::-moz-selection{--tw-text-opacity:1;color:rgb(6 21 53/var(--tw-text-opacity,1))}.selection\:text-\[\#061535\] ::selection{--tw-text-opacity:1;color:rgb(6 21 53/var(--tw-text-opacity,1))}.selection\:bg-\[\#00D9FF\]::-moz-selection{--tw-bg-opacity:1;background-color:rgb(0 217 255/var(--tw-bg-opacity,1))}.selection\:bg-\[\#00D9FF\]::selection{--tw-bg-opacity:1;background-color:rgb(0 217 255/var(--tw-bg-opacity,1))}.selection\:text-\[\#020817\]::-moz-selection{--tw-text-opacity:1;color:rgb(2 8 23/var(--tw-text-opacity,1))}.selection\:text-\[\#020817\]::selection{--tw-text-opacity:1;color:rgb(2 8 23/var(--tw-text-opacity,1))}.selection\:text-\[\#061535\]::-moz-selection{--tw-text-opacity:1;color:rgb(6 21 53/var(--tw-text-opacity,1))}.selection\:text-\[\#061535\]::selection{--tw-text-opacity:1;color:rgb(6 21 53/var(--tw-text-opacity,1))}.file\:mr-4::file-selector-button{margin-right:1rem}.file\:rounded-xl::file-selector-button{border-radius:.75rem}.file\:border-0::file-selector-button{border-width:0}.file\:bg-\[\#007BFF\]::file-selector-button{--tw-bg-opacity:1;background-color:rgb(0 123 255/var(--tw-bg-opacity,1))}.file\:px-4::file-selector-button{padding-left:1rem;padding-right:1rem}.file\:py-2::file-selector-button{padding-top:.5rem;padding-bottom:.5rem}.file\:py-2\.5::file-selector-button{padding-top:.625rem;padding-bottom:.625rem}.file\:text-xs::file-selector-button{font-size:.75rem;line-height:1rem}.file\:font-semibold::file-selector-button{font-weight:600}.file\:text-white::file-selector-button{--tw-text-opacity:1;color:rgb(255 255 255/var(--tw-text-opacity,1))}.after\:absolute:after{content:var(--tw-content);position:absolute}.after\:left-\[2px\]:after{content:var(--tw-content);left:2px}.after\:top-\[2px\]:after{content:var(--tw-content);top:2px}.after\:h-5:after{content:var(--tw-content);height:1.25rem}.after\:w-5:after{content:var(--tw-content);width:1.25rem}.after\:rounded-full:after{content:var(--tw-content);border-radius:9999px}.after\:border:after{content:var(--tw-content);border-width:1px}.after\:border-gray-300:after{content:var(--tw-content);--tw-border-opacity:1;border-color:rgb(209 213 219/var(--tw-border-opacity,1))}.after\:bg-white:after{content:var(--tw-content);--tw-bg-opacity:1;background-color:rgb(255 255 255/var(--tw-bg-opacity,1))}.after\:transition-all:after{content:var(--tw-content);transition-property:all;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.after\:content-\[\'\'\]:after{--tw-content:"";content:var(--tw-content)}.hover\:border-\[\#00D9FF\]:hover{--tw-border-opacity:1;border-color:rgb(0 217 255/var(--tw-border-opacity,1))}.hover\:border-\[\#00D9FF\]\/40:hover{border-color:rgba(0,217,255,.4)}.hover\:border-\[\#0284C7\]:hover{--tw-border-opacity:1;border-color:rgb(2 132 199/var(--tw-border-opacity,1))}.hover\:border-\[\#7C3AED\]:hover{--tw-border-opacity:1;border-color:rgb(124 58 237/var(--tw-border-opacity,1))}.hover\:border-\[\#E2136E\]:hover{--tw-border-opacity:1;border-color:rgb(226 19 110/var(--tw-border-opacity,1))}.hover\:border-\[\#EA580C\]:hover{--tw-border-opacity:1;border-color:rgb(234 88 12/var(--tw-border-opacity,1))}.hover\:border-amber-400:hover{--tw-border-opacity:1;border-color:rgb(251 191 36/var(--tw-border-opacity,1))}.hover\:bg-\[\#0056b3\]:hover{--tw-bg-opacity:1;background-color:rgb(0 86 179/var(--tw-bg-opacity,1))}.hover\:bg-\[\#007BFF\]:hover{--tw-bg-opacity:1;background-color:rgb(0 123 255/var(--tw-bg-opacity,1))}.hover\:bg-\[\#00D9FF\]\/20:hover{background-color:rgba(0,217,255,.2)}.hover\:bg-\[\#051433\]\/60:hover{background-color:rgba(5,20,51,.6)}.hover\:bg-\[\#081e4b\]:hover{--tw-bg-opacity:1;background-color:rgb(8 30 75/var(--tw-bg-opacity,1))}.hover\:bg-\[\#092257\]:hover{--tw-bg-opacity:1;background-color:rgb(9 34 87/var(--tw-bg-opacity,1))}.hover\:bg-\[\#0c245c\]:hover{--tw-bg-opacity:1;background-color:rgb(12 36 92/var(--tw-bg-opacity,1))}.hover\:bg-\[\#0c2e75\]:hover{--tw-bg-opacity:1;background-color:rgb(12 46 117/var(--tw-bg-opacity,1))}.hover\:bg-\[\#0f2d6e\]:hover{--tw-bg-opacity:1;background-color:rgb(15 45 110/var(--tw-bg-opacity,1))}.hover\:bg-rose-500\/30:hover{background-color:rgba(244,63,94,.3)}.hover\:bg-slate-800:hover{--tw-bg-opacity:1;background-color:rgb(30 41 59/var(--tw-bg-opacity,1))}.hover\:text-\[\#00D89A\]:hover{--tw-text-opacity:1;color:rgb(0 216 154/var(--tw-text-opacity,1))}.hover\:text-\[\#00D9FF\]:hover{--tw-text-opacity:1;color:rgb(0 217 255/var(--tw-text-opacity,1))}.hover\:text-rose-300:hover{--tw-text-opacity:1;color:rgb(253 164 175/var(--tw-text-opacity,1))}.hover\:text-rose-400:hover{--tw-text-opacity:1;color:rgb(251 113 133/var(--tw-text-opacity,1))}.hover\:text-white:hover{--tw-text-opacity:1;color:rgb(255 255 255/var(--tw-text-opacity,1))}.hover\:underline:hover{text-decoration-line:underline}.hover\:file\:bg-\[\#0056b3\]::file-selector-button:hover{--tw-bg-opacity:1;background-color:rgb(0 86 179/var(--tw-bg-opacity,1))}.focus\:border-\[\#00D89A\]:focus{--tw-border-opacity:1;border-color:rgb(0 216 154/var(--tw-border-opacity,1))}.focus\:border-\[\#00D9FF\]:focus{--tw-border-opacity:1;border-color:rgb(0 217 255/var(--tw-border-opacity,1))}.focus\:border-amber-400:focus{--tw-border-opacity:1;border-color:rgb(251 191 36/var(--tw-border-opacity,1))}.focus\:outline-none:focus{outline:2px solid transparent;outline-offset:2px}.active\:scale-95:active{--tw-scale-x:.95;--tw-scale-y:.95;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.group:hover .group-hover\:text-\[\#00D89A\]{--tw-text-opacity:1;color:rgb(0 216 154/var(--tw-text-opacity,1))}.group:hover .group-hover\:text-\[\#00D9FF\]{--tw-text-opacity:1;color:rgb(0 217 255/var(--tw-text-opacity,1))}.group:hover .group-hover\:text-amber-400{--tw-text-opacity:1;color:rgb(251 191 36/var(--tw-text-opacity,1))}.peer:checked~.peer-checked\:bg-\[\#00D89A\]{--tw-bg-opacity:1;background-color:rgb(0 216 154/var(--tw-bg-opacity,1))}.peer:checked~.peer-checked\:after\:translate-x-full:after{content:var(--tw-content);--tw-translate-x:100%;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.peer:checked~.peer-checked\:after\:border-white:after{content:var(--tw-content);--tw-border-opacity:1;border-color:rgb(255 255 255/var(--tw-border-opacity,1))}.peer:focus~.peer-focus\:outline-none{outline:2px solid transparent;outline-offset:2px}@media (min-width:640px){.sm\:w-auto{width:auto}.sm\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.sm\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}.sm\:grid-cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}.sm\:flex-row{flex-direction:row}.sm\:items-center{align-items:center}.sm\:justify-end{justify-content:flex-end}.sm\:border-t-0{border-top-width:0}.sm\:p-8{padding:2rem}.sm\:px-4{padding-left:1rem;padding-right:1rem}.sm\:pt-0{padding-top:0}.sm\:text-right{text-align:right}.sm\:text-sm{font-size:.875rem;line-height:1.25rem}}@media (min-width:768px){.md\:mx-0{margin-left:0;margin-right:0}.md\:ml-72{margin-left:18rem}.md\:flex{display:flex}.md\:hidden{display:none}.md\:w-1\/2{width:50%}.md\:w-auto{width:auto}.md\:flex-none{flex:none}.md\:translate-x-0{--tw-translate-x:0px;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.md\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.md\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.md\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}.md\:flex-row{flex-direction:row}.md\:items-center{align-items:center}.md\:justify-start{justify-content:flex-start}.md\:gap-4{gap:1rem}.md\:p-10{padding:2.5rem}.md\:p-12{padding:3rem}.md\:p-5{padding:1.25rem}.md\:p-8{padding:2rem}.md\:px-10{padding-left:2.5rem;padding-right:2.5rem}.md\:px-8{padding-left:2rem;padding-right:2rem}.md\:py-16{padding-top:4rem;padding-bottom:4rem}.md\:text-left{text-align:left}.md\:text-2xl{font-size:1.5rem;line-height:2rem}.md\:text-3xl{font-size:1.875rem;line-height:2.25rem}.md\:text-5xl{font-size:3rem;line-height:1}.md\:text-\[11px\]{font-size:11px}.md\:text-base{font-size:1rem;line-height:1.5rem}.md\:text-lg{font-size:1.125rem;line-height:1.75rem}.md\:text-sm{font-size:.875rem;line-height:1.25rem}}</style>
+    <style>*,:after,:before{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgba(59,130,246,.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }::backdrop{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgba(59,130,246,.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }/*! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com*/*,:after,:before{box-sizing:border-box;border:0 solid #e5e7eb}:after,:before{--tw-content:""}:host,html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;-o-tab-size:4;tab-size:4;font-family:ui-sans-serif,system-ui,sans-serif,Apple Color Emoji,Segoe UI Emoji,Segoe UI Symbol,Noto Color Emoji;font-feature-settings:normal;font-variation-settings:normal;-webkit-tap-highlight-color:transparent}body{margin:0;line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace;font-feature-settings:normal;font-variation-settings:normal;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-feature-settings:inherit;font-variation-settings:inherit;font-size:100%;font-weight:inherit;line-height:inherit;letter-spacing:inherit;color:inherit;margin:0;padding:0}button,select{text-transform:none}button,input:where([type=button]),input:where([type=reset]),input:where([type=submit]){-webkit-appearance:button;background-color:transparent;background-image:none}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,figure,h1,h2,h3,h4,h5,h6,hr,p,pre{margin:0}fieldset{margin:0}fieldset,legend{padding:0}menu,ol,ul{list-style:none;margin:0;padding:0}dialog{padding:0}textarea{resize:vertical}input::-moz-placeholder,textarea::-moz-placeholder{opacity:1;color:#9ca3af}input::placeholder,textarea::placeholder{opacity:1;color:#9ca3af}[role=button],button{cursor:pointer}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block;vertical-align:middle}img,video{max-width:100%;height:auto}[hidden]:where(:not([hidden=until-found])){display:none}.\!container{width:100%!important}.container{width:100%}@media (min-width:640px){.\!container{max-width:640px!important}.container{max-width:640px}}@media (min-width:768px){.\!container{max-width:768px!important}.container{max-width:768px}}@media (min-width:1024px){.\!container{max-width:1024px!important}.container{max-width:1024px}}@media (min-width:1280px){.\!container{max-width:1280px!important}.container{max-width:1280px}}@media (min-width:1536px){.\!container{max-width:1536px!important}.container{max-width:1536px}}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border-width:0}.pointer-events-none{pointer-events:none}.visible{visibility:visible}.static{position:static}.fixed{position:fixed}.absolute{position:absolute}.relative{position:relative}.sticky{position:sticky}.inset-0{inset:0}.-top-3{top:-.75rem}.bottom-0{bottom:0}.left-0{left:0}.left-1\/2{left:50%}.left-4{left:1rem}.right-0{right:0}.right-4{right:1rem}.right-5{right:1.25rem}.right-6{right:1.5rem}.top-0{top:0}.top-3\.5{top:.875rem}.top-5{top:1.25rem}.z-30{z-index:30}.z-40{z-index:40}.z-50{z-index:50}.z-\[60\]{z-index:60}.z-\[70\]{z-index:70}.mx-auto{margin-left:auto;margin-right:auto}.my-3{margin-top:.75rem;margin-bottom:.75rem}.my-4{margin-top:1rem;margin-bottom:1rem}.-mt-0\.5{margin-top:-.125rem}.mb-1{margin-bottom:.25rem}.mb-1\.5{margin-bottom:.375rem}.mb-10{margin-bottom:2.5rem}.mb-2{margin-bottom:.5rem}.mb-3{margin-bottom:.75rem}.mb-4{margin-bottom:1rem}.mb-5{margin-bottom:1.25rem}.mb-6{margin-bottom:1.5rem}.ml-auto{margin-left:auto}.mr-1{margin-right:.25rem}.mr-1\.5{margin-right:.375rem}.mt-0\.5{margin-top:.125rem}.mt-1{margin-top:.25rem}.mt-1\.5{margin-top:.375rem}.mt-2{margin-top:.5rem}.mt-3{margin-top:.75rem}.mt-4{margin-top:1rem}.mt-5{margin-top:1.25rem}.mt-6{margin-top:1.5rem}.block{display:block}.flex{display:flex}.inline-flex{display:inline-flex}.table{display:table}.grid{display:grid}.hidden{display:none}.h-10{height:2.5rem}.h-11{height:2.75rem}.h-12{height:3rem}.h-14{height:3.5rem}.h-16{height:4rem}.h-2{height:.5rem}.h-2\.5{height:.625rem}.h-20{height:5rem}.h-36{height:9rem}.h-48{height:12rem}.h-5{height:1.25rem}.h-6{height:1.5rem}.h-7{height:1.75rem}.h-8{height:2rem}.h-9{height:2.25rem}.h-full{height:100%}.min-h-screen{min-height:100vh}.w-1\/2{width:50%}.w-10{width:2.5rem}.w-11{width:2.75rem}.w-12{width:3rem}.w-14{width:3.5rem}.w-16{width:4rem}.w-2{width:.5rem}.w-20{width:5rem}.w-4{width:1rem}.w-48{width:12rem}.w-5{width:1.25rem}.w-6{width:1.5rem}.w-7{width:1.75rem}.w-72{width:18rem}.w-8{width:2rem}.w-9{width:2.25rem}.w-\[90\%\]{width:90%}.w-auto{width:auto}.w-full{width:100%}.min-w-0{min-width:0}.max-w-2xl{max-width:42rem}.max-w-3xl{max-width:48rem}.max-w-4xl{max-width:56rem}.max-w-6xl{max-width:72rem}.max-w-lg{max-width:32rem}.max-w-md{max-width:28rem}.max-w-sm{max-width:24rem}.max-w-xl{max-width:36rem}.max-w-xs{max-width:20rem}.flex-1{flex:1 1 0%}.flex-shrink{flex-shrink:1}.shrink-0{flex-shrink:0}.-translate-x-1\/2{--tw-translate-x:-50%}.-translate-x-1\/2,.-translate-x-full{transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.-translate-x-full{--tw-translate-x:-100%}.-translate-y-8{--tw-translate-y:-2rem}.-translate-y-8,.translate-x-full{transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.translate-x-full{--tw-translate-x:100%}.translate-y-0{--tw-translate-y:0px}.transform,.translate-y-0{transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}@keyframes bounce{0%,to{transform:translateY(-25%);animation-timing-function:cubic-bezier(.8,0,1,1)}50%{transform:none;animation-timing-function:cubic-bezier(0,0,.2,1)}}.animate-bounce{animation:bounce 1s infinite}@keyframes pulse{50%{opacity:.5}}.animate-pulse{animation:pulse 2s cubic-bezier(.4,0,.6,1) infinite}.cursor-not-allowed{cursor:not-allowed}.cursor-pointer{cursor:pointer}.select-none{-webkit-user-select:none;-moz-user-select:none;user-select:none}.select-all{-webkit-user-select:all;-moz-user-select:all;user-select:all}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.flex-col{flex-direction:column}.flex-wrap{flex-wrap:wrap}.items-start{align-items:flex-start}.items-end{align-items:flex-end}.items-center{align-items:center}.items-stretch{align-items:stretch}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.gap-1{gap:.25rem}.gap-1\.5{gap:.375rem}.gap-10{gap:2.5rem}.gap-2{gap:.5rem}.gap-2\.5{gap:.625rem}.gap-3{gap:.75rem}.gap-3\.5{gap:.875rem}.gap-4{gap:1rem}.gap-5{gap:1.25rem}.gap-6{gap:1.5rem}.gap-8{gap:2rem}.gap-x-4{-moz-column-gap:1rem;column-gap:1rem}.gap-y-1{row-gap:.25rem}.space-y-1>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.25rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.25rem*var(--tw-space-y-reverse))}.space-y-1\.5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.375rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.375rem*var(--tw-space-y-reverse))}.space-y-2>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.5rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.5rem*var(--tw-space-y-reverse))}.space-y-2\.5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.625rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.625rem*var(--tw-space-y-reverse))}.space-y-3>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.75rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.75rem*var(--tw-space-y-reverse))}.space-y-3\.5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.875rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.875rem*var(--tw-space-y-reverse))}.space-y-4>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1rem*var(--tw-space-y-reverse))}.space-y-5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1.25rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1.25rem*var(--tw-space-y-reverse))}.space-y-6>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1.5rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1.5rem*var(--tw-space-y-reverse))}.divide-y>:not([hidden])~:not([hidden]){--tw-divide-y-reverse:0;border-top-width:calc(1px*(1 - var(--tw-divide-y-reverse)));border-bottom-width:calc(1px*var(--tw-divide-y-reverse))}.divide-\[\#0d265c\]>:not([hidden])~:not([hidden]){--tw-divide-opacity:1;border-color:rgb(13 38 92/var(--tw-divide-opacity,1))}.divide-\[\#0e275c\]>:not([hidden])~:not([hidden]){--tw-divide-opacity:1;border-color:rgb(14 39 92/var(--tw-divide-opacity,1))}.overflow-hidden{overflow:hidden}.overflow-x-auto{overflow-x:auto}.overflow-x-hidden{overflow-x:hidden}.truncate{overflow:hidden;text-overflow:ellipsis}.truncate,.whitespace-nowrap{white-space:nowrap}.break-all{word-break:break-all}.rounded-2xl{border-radius:1rem}.rounded-3xl{border-radius:1.5rem}.rounded-full{border-radius:9999px}.rounded-lg{border-radius:.5rem}.rounded-md{border-radius:.375rem}.rounded-xl{border-radius:.75rem}.border{border-width:1px}.border-2{border-width:2px}.border-b{border-bottom-width:1px}.border-l{border-left-width:1px}.border-r{border-right-width:1px}.border-t{border-top-width:1px}.border-dashed{border-style:dashed}.border-\[\#007BFF\]\/30{border-color:rgba(0,123,255,.3)}.border-\[\#00D89A\]\/20{border-color:rgba(0,216,154,.2)}.border-\[\#00D89A\]\/30{border-color:rgba(0,216,154,.3)}.border-\[\#00D89A\]\/40{border-color:rgba(0,216,154,.4)}.border-\[\#00D89A\]\/50{border-color:rgba(0,216,154,.5)}.border-\[\#00D89A\]\/60{border-color:rgba(0,216,154,.6)}.border-\[\#00D9FF\]{--tw-border-opacity:1;border-color:rgb(0 217 255/var(--tw-border-opacity,1))}.border-\[\#00D9FF\]\/20{border-color:rgba(0,217,255,.2)}.border-\[\#00D9FF\]\/30{border-color:rgba(0,217,255,.3)}.border-\[\#00D9FF\]\/40{border-color:rgba(0,217,255,.4)}.border-\[\#00D9FF\]\/50{border-color:rgba(0,217,255,.5)}.border-\[\#0d265c\]{--tw-border-opacity:1;border-color:rgb(13 38 92/var(--tw-border-opacity,1))}.border-\[\#0d2a63\]{--tw-border-opacity:1;border-color:rgb(13 42 99/var(--tw-border-opacity,1))}.border-\[\#0e275c\]{--tw-border-opacity:1;border-color:rgb(14 39 92/var(--tw-border-opacity,1))}.border-\[\#0e306e\]{--tw-border-opacity:1;border-color:rgb(14 48 110/var(--tw-border-opacity,1))}.border-\[\#10326f\]{--tw-border-opacity:1;border-color:rgb(16 50 111/var(--tw-border-opacity,1))}.border-\[\#123982\]{--tw-border-opacity:1;border-color:rgb(18 57 130/var(--tw-border-opacity,1))}.border-\[\#143985\]{--tw-border-opacity:1;border-color:rgb(20 57 133/var(--tw-border-opacity,1))}.border-\[\#16418f\]{--tw-border-opacity:1;border-color:rgb(22 65 143/var(--tw-border-opacity,1))}.border-\[\#174396\]{--tw-border-opacity:1;border-color:rgb(23 67 150/var(--tw-border-opacity,1))}.border-amber-500\/30{border-color:rgba(245,158,11,.3)}.border-amber-500\/40{border-color:rgba(245,158,11,.4)}.border-rose-500\/30{border-color:rgba(244,63,94,.3)}.border-rose-500\/40{border-color:rgba(244,63,94,.4)}.border-slate-700{--tw-border-opacity:1;border-color:rgb(51 65 85/var(--tw-border-opacity,1))}.bg-\[\#007BFF\]{--tw-bg-opacity:1;background-color:rgb(0 123 255/var(--tw-bg-opacity,1))}.bg-\[\#007BFF\]\/20{background-color:rgba(0,123,255,.2)}.bg-\[\#00D89A\]{--tw-bg-opacity:1;background-color:rgb(0 216 154/var(--tw-bg-opacity,1))}.bg-\[\#00D89A\]\/10{background-color:rgba(0,216,154,.1)}.bg-\[\#00D89A\]\/15{background-color:rgba(0,216,154,.15)}.bg-\[\#00D89A\]\/20{background-color:rgba(0,216,154,.2)}.bg-\[\#00D9FF\]\/10{background-color:rgba(0,217,255,.1)}.bg-\[\#00D9FF\]\/15{background-color:rgba(0,217,255,.15)}.bg-\[\#00D9FF\]\/20{background-color:rgba(0,217,255,.2)}.bg-\[\#020817\]{--tw-bg-opacity:1;background-color:rgb(2 8 23/var(--tw-bg-opacity,1))}.bg-\[\#020817\]\/80{background-color:rgba(2,8,23,.8)}.bg-\[\#020817\]\/85{background-color:rgba(2,8,23,.85)}.bg-\[\#030d24\]\/95{background-color:rgba(3,13,36,.95)}.bg-\[\#03132e\]{--tw-bg-opacity:1;background-color:rgb(3 19 46/var(--tw-bg-opacity,1))}.bg-\[\#040e24\]{--tw-bg-opacity:1;background-color:rgb(4 14 36/var(--tw-bg-opacity,1))}.bg-\[\#04122d\]{--tw-bg-opacity:1;background-color:rgb(4 18 45/var(--tw-bg-opacity,1))}.bg-\[\#05112b\]\/95{background-color:rgba(5,17,43,.95)}.bg-\[\#051433\]{--tw-bg-opacity:1;background-color:rgb(5 20 51/var(--tw-bg-opacity,1))}.bg-\[\#051433\]\/95{background-color:rgba(5,20,51,.95)}.bg-\[\#061535\]{--tw-bg-opacity:1;background-color:rgb(6 21 53/var(--tw-bg-opacity,1))}.bg-\[\#061535\]\/80{background-color:rgba(6,21,53,.8)}.bg-\[\#061535\]\/85{background-color:rgba(6,21,53,.85)}.bg-\[\#061535\]\/90{background-color:rgba(6,21,53,.9)}.bg-\[\#071638\]{--tw-bg-opacity:1;background-color:rgb(7 22 56/var(--tw-bg-opacity,1))}.bg-\[\#081b42\]\/95{background-color:rgba(8,27,66,.95)}.bg-\[\#081e4b\]{--tw-bg-opacity:1;background-color:rgb(8 30 75/var(--tw-bg-opacity,1))}.bg-\[\#09204e\]{--tw-bg-opacity:1;background-color:rgb(9 32 78/var(--tw-bg-opacity,1))}.bg-\[\#092257\]{--tw-bg-opacity:1;background-color:rgb(9 34 87/var(--tw-bg-opacity,1))}.bg-\[\#0a1e4a\]{--tw-bg-opacity:1;background-color:rgb(10 30 74/var(--tw-bg-opacity,1))}.bg-\[\#0a2356\]{--tw-bg-opacity:1;background-color:rgb(10 35 86/var(--tw-bg-opacity,1))}.bg-\[\#0c2454\]{--tw-bg-opacity:1;background-color:rgb(12 36 84/var(--tw-bg-opacity,1))}.bg-\[\#35F58A\]\/15{background-color:rgba(53,245,138,.15)}.bg-\[\#35F58A\]\/20{background-color:rgba(53,245,138,.2)}.bg-\[\#8B5CF6\]\/20{background-color:rgba(139,92,246,.2)}.bg-amber-500\/15{background-color:rgba(245,158,11,.15)}.bg-amber-500\/20{background-color:rgba(245,158,11,.2)}.bg-black\/80{background-color:rgba(0,0,0,.8)}.bg-rose-500{--tw-bg-opacity:1;background-color:rgb(244 63 94/var(--tw-bg-opacity,1))}.bg-rose-500\/10{background-color:rgba(244,63,94,.1)}.bg-rose-500\/20{background-color:rgba(244,63,94,.2)}.bg-slate-700{--tw-bg-opacity:1;background-color:rgb(51 65 85/var(--tw-bg-opacity,1))}.bg-slate-800{--tw-bg-opacity:1;background-color:rgb(30 41 59/var(--tw-bg-opacity,1))}.bg-transparent{background-color:transparent}.bg-white{--tw-bg-opacity:1;background-color:rgb(255 255 255/var(--tw-bg-opacity,1))}.bg-gradient-to-br{background-image:linear-gradient(to bottom right,var(--tw-gradient-stops))}.from-\[\#06303a\]{--tw-gradient-from:#06303a var(--tw-gradient-from-position);--tw-gradient-to:rgba(6,48,58,0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}.from-\[\#071a44\]{--tw-gradient-from:#071a44 var(--tw-gradient-from-position);--tw-gradient-to:rgba(7,26,68,0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}.from-\[\#081d49\]{--tw-gradient-from:#081d49 var(--tw-gradient-from-position);--tw-gradient-to:rgba(8,29,73,0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}.from-\[\#0b2559\]{--tw-gradient-from:#0b2559 var(--tw-gradient-from-position);--tw-gradient-to:rgba(11,37,89,0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}.via-\[\#092257\]{--tw-gradient-to:rgba(9,34,87,0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),#092257 var(--tw-gradient-via-position),var(--tw-gradient-to)}.to-\[\#020817\]{--tw-gradient-to:#020817 var(--tw-gradient-to-position)}.to-\[\#04112c\]{--tw-gradient-to:#04112c var(--tw-gradient-to-position)}.to-\[\#04122d\]{--tw-gradient-to:#04122d var(--tw-gradient-to-position)}.to-\[\#05112b\]{--tw-gradient-to:#05112b var(--tw-gradient-to-position)}.to-\[\#081e4b\]{--tw-gradient-to:#081e4b var(--tw-gradient-to-position)}.object-contain{-o-object-fit:contain;object-fit:contain}.p-1{padding:.25rem}.p-1\.5{padding:.375rem}.p-2{padding:.5rem}.p-3{padding:.75rem}.p-3\.5{padding:.875rem}.p-4{padding:1rem}.p-5{padding:1.25rem}.p-6{padding:1.5rem}.p-8{padding:2rem}.px-1\.5{padding-left:.375rem;padding-right:.375rem}.px-2{padding-left:.5rem;padding-right:.5rem}.px-2\.5{padding-left:.625rem;padding-right:.625rem}.px-3{padding-left:.75rem;padding-right:.75rem}.px-3\.5{padding-left:.875rem;padding-right:.875rem}.px-4{padding-left:1rem;padding-right:1rem}.px-5{padding-left:1.25rem;padding-right:1.25rem}.px-7{padding-left:1.75rem;padding-right:1.75rem}.py-0\.5{padding-top:.125rem;padding-bottom:.125rem}.py-1{padding-top:.25rem;padding-bottom:.25rem}.py-1\.5{padding-top:.375rem;padding-bottom:.375rem}.py-10{padding-top:2.5rem;padding-bottom:2.5rem}.py-12{padding-top:3rem;padding-bottom:3rem}.py-2{padding-top:.5rem;padding-bottom:.5rem}.py-2\.5{padding-top:.625rem;padding-bottom:.625rem}.py-3{padding-top:.75rem;padding-bottom:.75rem}.py-3\.5{padding-top:.875rem;padding-bottom:.875rem}.py-8{padding-top:2rem;padding-bottom:2rem}.pb-3{padding-bottom:.75rem}.pb-4{padding-bottom:1rem}.pb-5{padding-bottom:1.25rem}.pl-11{padding-left:2.75rem}.pr-11{padding-right:2.75rem}.pr-2{padding-right:.5rem}.pr-4{padding-right:1rem}.pt-0\.5{padding-top:.125rem}.pt-1{padding-top:.25rem}.pt-2{padding-top:.5rem}.pt-2\.5{padding-top:.625rem}.pt-3{padding-top:.75rem}.pt-5{padding-top:1.25rem}.pt-6{padding-top:1.5rem}.text-left{text-align:left}.text-center{text-align:center}.text-right{text-align:right}.font-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace}.font-sans{font-family:ui-sans-serif,system-ui,sans-serif,Apple Color Emoji,Segoe UI Emoji,Segoe UI Symbol,Noto Color Emoji}.text-2xl{font-size:1.5rem;line-height:2rem}.text-3xl{font-size:1.875rem;line-height:2.25rem}.text-4xl{font-size:2.25rem;line-height:2.5rem}.text-\[10px\]{font-size:10px}.text-\[11px\]{font-size:11px}.text-\[6px\]{font-size:6px}.text-\[9px\]{font-size:9px}.text-base{font-size:1rem;line-height:1.5rem}.text-lg{font-size:1.125rem;line-height:1.75rem}.text-sm{font-size:.875rem;line-height:1.25rem}.text-xl{font-size:1.25rem;line-height:1.75rem}.text-xs{font-size:.75rem;line-height:1rem}.font-black{font-weight:900}.font-bold{font-weight:700}.font-medium{font-weight:500}.font-semibold{font-weight:600}.uppercase{text-transform:uppercase}.leading-relaxed{line-height:1.625}.leading-tight{line-height:1.25}.tracking-wide{letter-spacing:.025em}.tracking-wider{letter-spacing:.05em}.tracking-widest{letter-spacing:.1em}.text-\[\#007BFF\]{--tw-text-opacity:1;color:rgb(0 123 255/var(--tw-text-opacity,1))}.text-\[\#00D89A\]{--tw-text-opacity:1;color:rgb(0 216 154/var(--tw-text-opacity,1))}.text-\[\#00D89A\]\/20{color:rgba(0,216,154,.2)}.text-\[\#00D9FF\]{--tw-text-opacity:1;color:rgb(0 217 255/var(--tw-text-opacity,1))}.text-\[\#00D9FF\]\/20{color:rgba(0,217,255,.2)}.text-\[\#020817\]{--tw-text-opacity:1;color:rgb(2 8 23/var(--tw-text-opacity,1))}.text-\[\#0284C7\]{--tw-text-opacity:1;color:rgb(2 132 199/var(--tw-text-opacity,1))}.text-\[\#061535\]{--tw-text-opacity:1;color:rgb(6 21 53/var(--tw-text-opacity,1))}.text-\[\#25D366\]{--tw-text-opacity:1;color:rgb(37 211 102/var(--tw-text-opacity,1))}.text-\[\#35F58A\]{--tw-text-opacity:1;color:rgb(53 245 138/var(--tw-text-opacity,1))}.text-\[\#35F58A\]\/20{color:rgba(53,245,138,.2)}.text-\[\#38BDF8\]{--tw-text-opacity:1;color:rgb(56 189 248/var(--tw-text-opacity,1))}.text-\[\#7C3AED\]{--tw-text-opacity:1;color:rgb(124 58 237/var(--tw-text-opacity,1))}.text-\[\#8B5CF6\]{--tw-text-opacity:1;color:rgb(139 92 246/var(--tw-text-opacity,1))}.text-\[\#E2136E\]{--tw-text-opacity:1;color:rgb(226 19 110/var(--tw-text-opacity,1))}.text-\[\#EA580C\]{--tw-text-opacity:1;color:rgb(234 88 12/var(--tw-text-opacity,1))}.text-\[\#F5F8FC\]{--tw-text-opacity:1;color:rgb(245 248 252/var(--tw-text-opacity,1))}.text-\[\#FBBF24\],.text-amber-400{--tw-text-opacity:1;color:rgb(251 191 36/var(--tw-text-opacity,1))}.text-cyan-400{--tw-text-opacity:1;color:rgb(34 211 238/var(--tw-text-opacity,1))}.text-emerald-400{--tw-text-opacity:1;color:rgb(52 211 153/var(--tw-text-opacity,1))}.text-rose-300{--tw-text-opacity:1;color:rgb(253 164 175/var(--tw-text-opacity,1))}.text-rose-400{--tw-text-opacity:1;color:rgb(251 113 133/var(--tw-text-opacity,1))}.text-slate-200{--tw-text-opacity:1;color:rgb(226 232 240/var(--tw-text-opacity,1))}.text-slate-300{--tw-text-opacity:1;color:rgb(203 213 225/var(--tw-text-opacity,1))}.text-slate-400{--tw-text-opacity:1;color:rgb(148 163 184/var(--tw-text-opacity,1))}.text-slate-500{--tw-text-opacity:1;color:rgb(100 116 139/var(--tw-text-opacity,1))}.text-white{--tw-text-opacity:1;color:rgb(255 255 255/var(--tw-text-opacity,1))}.line-through{text-decoration-line:line-through}.opacity-0{opacity:0}.opacity-100{opacity:1}.opacity-50{opacity:.5}.opacity-75{opacity:.75}.shadow-2xl{--tw-shadow:0 25px 50px -12px rgba(0,0,0,.25);--tw-shadow-colored:0 25px 50px -12px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_10px_rgba\(0\2c 123\2c 255\2c 0\.4\)\]{--tw-shadow:0 0 10px rgba(0,123,255,.4);--tw-shadow-colored:0 0 10px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_10px_rgba\(0\2c 216\2c 154\2c 0\.4\)\]{--tw-shadow:0 0 10px rgba(0,216,154,.4);--tw-shadow-colored:0 0 10px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_10px_rgba\(0\2c 217\2c 255\2c 0\.2\)\]{--tw-shadow:0 0 10px rgba(0,217,255,.2);--tw-shadow-colored:0 0 10px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_10px_rgba\(0\2c 217\2c 255\2c 0\.4\)\]{--tw-shadow:0 0 10px rgba(0,217,255,.4);--tw-shadow-colored:0 0 10px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_10px_rgba\(139\2c 92\2c 246\2c 0\.4\)\]{--tw-shadow:0 0 10px rgba(139,92,246,.4);--tw-shadow-colored:0 0 10px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_15px_rgba\(0\2c 217\2c 255\2c 0\.1\)\]{--tw-shadow:0 0 15px rgba(0,217,255,.1);--tw-shadow-colored:0 0 15px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_15px_rgba\(0\2c 217\2c 255\2c 0\.15\)\]{--tw-shadow:0 0 15px rgba(0,217,255,.15);--tw-shadow-colored:0 0 15px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_18px_rgba\(0\2c 216\2c 154\2c 0\.15\)\]{--tw-shadow:0 0 18px rgba(0,216,154,.15);--tw-shadow-colored:0 0 18px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_20px_rgba\(0\2c 217\2c 255\2c 0\.12\)\]{--tw-shadow:0 0 20px rgba(0,217,255,.12);--tw-shadow-colored:0 0 20px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_20px_rgba\(0\2c 217\2c 255\2c 0\.4\)\]{--tw-shadow:0 0 20px rgba(0,217,255,.4);--tw-shadow-colored:0 0 20px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_25px_rgba\(0\2c 217\2c 255\2c 0\.3\)\]{--tw-shadow:0 0 25px rgba(0,217,255,.3);--tw-shadow-colored:0 0 25px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-\[0_0_8px_rgba\(0\2c 216\2c 154\2c 0\.8\)\]{--tw-shadow:0 0 8px rgba(0,216,154,.8);--tw-shadow-colored:0 0 8px var(--tw-shadow-color)}.shadow-\[0_0_8px_rgba\(0\2c 216\2c 154\2c 0\.8\)\],.shadow-lg{box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-lg{--tw-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1);--tw-shadow-colored:0 10px 15px -3px var(--tw-shadow-color),0 4px 6px -4px var(--tw-shadow-color)}.shadow-md{--tw-shadow:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -2px rgba(0,0,0,.1);--tw-shadow-colored:0 4px 6px -1px var(--tw-shadow-color),0 2px 4px -2px var(--tw-shadow-color)}.shadow-md,.shadow-sm{box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-sm{--tw-shadow:0 1px 2px 0 rgba(0,0,0,.05);--tw-shadow-colored:0 1px 2px 0 var(--tw-shadow-color)}.shadow-xl{--tw-shadow:0 20px 25px -5px rgba(0,0,0,.1),0 8px 10px -6px rgba(0,0,0,.1);--tw-shadow-colored:0 20px 25px -5px var(--tw-shadow-color),0 8px 10px -6px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow,0 0 #0000),var(--tw-ring-shadow,0 0 #0000),var(--tw-shadow)}.shadow-black\/40{--tw-shadow-color:rgba(0,0,0,.4);--tw-shadow:var(--tw-shadow-colored)}.shadow-cyan-500\/10{--tw-shadow-color:rgba(6,182,212,.1);--tw-shadow:var(--tw-shadow-colored)}.shadow-cyan-500\/20{--tw-shadow-color:rgba(6,182,212,.2);--tw-shadow:var(--tw-shadow-colored)}.shadow-cyan-900\/10{--tw-shadow-color:rgba(22,78,99,.1);--tw-shadow:var(--tw-shadow-colored)}.blur{--tw-blur:blur(8px);filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.backdrop-blur-2xl{--tw-backdrop-blur:blur(40px)}.backdrop-blur-2xl,.backdrop-blur-lg{-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.backdrop-blur-lg{--tw-backdrop-blur:blur(16px)}.backdrop-blur-md{--tw-backdrop-blur:blur(12px)}.backdrop-blur-md,.backdrop-blur-sm{-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.backdrop-blur-sm{--tw-backdrop-blur:blur(4px)}.backdrop-blur-xl{--tw-backdrop-blur:blur(24px)}.backdrop-blur-xl,.backdrop-filter{-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.transition{transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,-webkit-backdrop-filter;transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,backdrop-filter;transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,backdrop-filter,-webkit-backdrop-filter;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.transition-all{transition-property:all;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.transition-opacity{transition-property:opacity;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.transition-transform{transition-property:transform;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.duration-200{transition-duration:.2s}.duration-300{transition-duration:.3s}.ease-in-out{transition-timing-function:cubic-bezier(.4,0,.2,1)}.selection\:bg-\[\#00D9FF\] ::-moz-selection{--tw-bg-opacity:1;background-color:rgb(0 217 255/var(--tw-bg-opacity,1))}.selection\:bg-\[\#00D9FF\] ::selection{--tw-bg-opacity:1;background-color:rgb(0 217 255/var(--tw-bg-opacity,1))}.selection\:text-\[\#020817\] ::-moz-selection{--tw-text-opacity:1;color:rgb(2 8 23/var(--tw-text-opacity,1))}.selection\:text-\[\#020817\] ::selection{--tw-text-opacity:1;color:rgb(2 8 23/var(--tw-text-opacity,1))}.selection\:text-\[\#061535\] ::-moz-selection{--tw-text-opacity:1;color:rgb(6 21 53/var(--tw-text-opacity,1))}.selection\:text-\[\#061535\] ::selection{--tw-text-opacity:1;color:rgb(6 21 53/var(--tw-text-opacity,1))}.selection\:bg-\[\#00D9FF\]::-moz-selection{--tw-bg-opacity:1;background-color:rgb(0 217 255/var(--tw-bg-opacity,1))}.selection\:bg-\[\#00D9FF\]::selection{--tw-bg-opacity:1;background-color:rgb(0 217 255/var(--tw-bg-opacity,1))}.selection\:text-\[\#020817\]::-moz-selection{--tw-text-opacity:1;color:rgb(2 8 23/var(--tw-text-opacity,1))}.selection\:text-\[\#020817\]::selection{--tw-text-opacity:1;color:rgb(2 8 23/var(--tw-text-opacity,1))}.selection\:text-\[\#061535\]::-moz-selection{--tw-text-opacity:1;color:rgb(6 21 53/var(--tw-text-opacity,1))}.selection\:text-\[\#061535\]::selection{--tw-text-opacity:1;color:rgb(6 21 53/var(--tw-text-opacity,1))}.file\:mr-4::file-selector-button{margin-right:1rem}.file\:rounded-xl::file-selector-button{border-radius:.75rem}.file\:border-0::file-selector-button{border-width:0}.file\:bg-\[\#007BFF\]::file-selector-button{--tw-bg-opacity:1;background-color:rgb(0 123 255/var(--tw-bg-opacity,1))}.file\:px-4::file-selector-button{padding-left:1rem;padding-right:1rem}.file\:py-2::file-selector-button{padding-top:.5rem;padding-bottom:.5rem}.file\:py-2\.5::file-selector-button{padding-top:.625rem;padding-bottom:.625rem}.file\:text-xs::file-selector-button{font-size:.75rem;line-height:1rem}.file\:font-semibold::file-selector-button{font-weight:600}.file\:text-white::file-selector-button{--tw-text-opacity:1;color:rgb(255 255 255/var(--tw-text-opacity,1))}.after\:absolute:after{content:var(--tw-content);position:absolute}.after\:left-\[2px\]:after{content:var(--tw-content);left:2px}.after\:top-\[2px\]:after{content:var(--tw-content);top:2px}.after\:h-5:after{content:var(--tw-content);height:1.25rem}.after\:w-5:after{content:var(--tw-content);width:1.25rem}.after\:rounded-full:after{content:var(--tw-content);border-radius:9999px}.after\:border:after{content:var(--tw-content);border-width:1px}.after\:border-gray-300:after{content:var(--tw-content);--tw-border-opacity:1;border-color:rgb(209 213 219/var(--tw-border-opacity,1))}.after\:bg-white:after{content:var(--tw-content);--tw-bg-opacity:1;background-color:rgb(255 255 255/var(--tw-bg-opacity,1))}.after\:transition-all:after{content:var(--tw-content);transition-property:all;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.after\:content-\[\'\'\]:after{--tw-content:"";content:var(--tw-content)}.hover\:border-\[\#00D9FF\]:hover{--tw-border-opacity:1;border-color:rgb(0 217 255/var(--tw-border-opacity,1))}.hover\:border-\[\#00D9FF\]\/40:hover{border-color:rgba(0,217,255,.4)}.hover\:border-\[\#0284C7\]:hover{--tw-border-opacity:1;border-color:rgb(2 132 199/var(--tw-border-opacity,1))}.hover\:border-\[\#7C3AED\]:hover{--tw-border-opacity:1;border-color:rgb(124 58 237/var(--tw-border-opacity,1))}.hover\:border-\[\#E2136E\]:hover{--tw-border-opacity:1;border-color:rgb(226 19 110/var(--tw-border-opacity,1))}.hover\:border-\[\#EA580C\]:hover{--tw-border-opacity:1;border-color:rgb(234 88 12/var(--tw-border-opacity,1))}.hover\:border-amber-400:hover{--tw-border-opacity:1;border-color:rgb(251 191 36/var(--tw-border-opacity,1))}.hover\:bg-\[\#007BFF\]:hover{--tw-bg-opacity:1;background-color:rgb(0 123 255/var(--tw-bg-opacity,1))}.hover\:bg-\[\#00D9FF\]\/20:hover{background-color:rgba(0,217,255,.2)}.hover\:bg-\[\#051433\]\/60:hover{background-color:rgba(5,20,51,.6)}.hover\:bg-\[\#092257\]:hover{--tw-bg-opacity:1;background-color:rgb(9 34 87/var(--tw-bg-opacity,1))}.hover\:bg-\[\#0c245c\]:hover{--tw-bg-opacity:1;background-color:rgb(12 36 92/var(--tw-bg-opacity,1))}.hover\:bg-\[\#0c2e75\]:hover{--tw-bg-opacity:1;background-color:rgb(12 46 117/var(--tw-bg-opacity,1))}.hover\:bg-\[\#0f2d6e\]:hover{--tw-bg-opacity:1;background-color:rgb(15 45 110/var(--tw-bg-opacity,1))}.hover\:bg-rose-500\/30:hover{background-color:rgba(244,63,94,.3)}.hover\:bg-slate-800:hover{--tw-bg-opacity:1;background-color:rgb(30 41 59/var(--tw-bg-opacity,1))}.hover\:text-\[\#00D89A\]:hover{--tw-text-opacity:1;color:rgb(0 216 154/var(--tw-text-opacity,1))}.hover\:text-\[\#00D9FF\]:hover{--tw-text-opacity:1;color:rgb(0 217 255/var(--tw-text-opacity,1))}.hover\:text-rose-300:hover{--tw-text-opacity:1;color:rgb(253 164 175/var(--tw-text-opacity,1))}.hover\:text-rose-400:hover{--tw-text-opacity:1;color:rgb(251 113 133/var(--tw-text-opacity,1))}.hover\:text-white:hover{--tw-text-opacity:1;color:rgb(255 255 255/var(--tw-text-opacity,1))}.hover\:underline:hover{text-decoration-line:underline}.hover\:file\:bg-\[\#0056b3\]::file-selector-button:hover{--tw-bg-opacity:1;background-color:rgb(0 86 179/var(--tw-bg-opacity,1))}.focus\:border-\[\#00D89A\]:focus{--tw-border-opacity:1;border-color:rgb(0 216 154/var(--tw-border-opacity,1))}.focus\:border-\[\#00D9FF\]:focus{--tw-border-opacity:1;border-color:rgb(0 217 255/var(--tw-border-opacity,1))}.focus\:border-amber-400:focus{--tw-border-opacity:1;border-color:rgb(251 191 36/var(--tw-border-opacity,1))}.focus\:outline-none:focus{outline:2px solid transparent;outline-offset:2px}.active\:scale-95:active{--tw-scale-x:.95;--tw-scale-y:.95;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.group:hover .group-hover\:text-\[\#00D89A\]{--tw-text-opacity:1;color:rgb(0 216 154/var(--tw-text-opacity,1))}.group:hover .group-hover\:text-\[\#00D9FF\]{--tw-text-opacity:1;color:rgb(0 217 255/var(--tw-text-opacity,1))}.group:hover .group-hover\:text-amber-400{--tw-text-opacity:1;color:rgb(251 191 36/var(--tw-text-opacity,1))}.peer:checked~.peer-checked\:border-\[\#00D9FF\]{--tw-border-opacity:1;border-color:rgb(0 217 255/var(--tw-border-opacity,1))}.peer:checked~.peer-checked\:bg-\[\#00D89A\]{--tw-bg-opacity:1;background-color:rgb(0 216 154/var(--tw-bg-opacity,1))}.peer:checked~.peer-checked\:bg-\[\#00D9FF\]\/10{background-color:rgba(0,217,255,.1)}.peer:checked~.peer-checked\:text-\[\#00D9FF\]{--tw-text-opacity:1;color:rgb(0 217 255/var(--tw-text-opacity,1))}.peer:checked~.peer-checked\:after\:translate-x-full:after{content:var(--tw-content);--tw-translate-x:100%;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.peer:checked~.peer-checked\:after\:border-white:after{content:var(--tw-content);--tw-border-opacity:1;border-color:rgb(255 255 255/var(--tw-border-opacity,1))}.peer:focus~.peer-focus\:outline-none{outline:2px solid transparent;outline-offset:2px}@media (min-width:640px){.sm\:col-span-2{grid-column:span 2/span 2}.sm\:inline{display:inline}.sm\:w-auto{width:auto}.sm\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.sm\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}.sm\:grid-cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}.sm\:flex-row{flex-direction:row}.sm\:items-center{align-items:center}.sm\:justify-end{justify-content:flex-end}.sm\:border-t-0{border-top-width:0}.sm\:p-8{padding:2rem}.sm\:px-4{padding-left:1rem;padding-right:1rem}.sm\:pt-0{padding-top:0}.sm\:text-right{text-align:right}.sm\:text-sm{font-size:.875rem;line-height:1.25rem}}@media (min-width:768px){.md\:col-span-3{grid-column:span 3/span 3}.md\:mx-0{margin-left:0;margin-right:0}.md\:ml-72{margin-left:18rem}.md\:flex{display:flex}.md\:hidden{display:none}.md\:w-1\/2{width:50%}.md\:w-auto{width:auto}.md\:flex-none{flex:none}.md\:translate-x-0{--tw-translate-x:0px;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.md\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.md\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.md\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}.md\:flex-row{flex-direction:row}.md\:items-center{align-items:center}.md\:justify-start{justify-content:flex-start}.md\:gap-4{gap:1rem}.md\:p-10{padding:2.5rem}.md\:p-12{padding:3rem}.md\:p-5{padding:1.25rem}.md\:p-7{padding:1.75rem}.md\:p-8{padding:2rem}.md\:px-10{padding-left:2.5rem;padding-right:2.5rem}.md\:px-8{padding-left:2rem;padding-right:2rem}.md\:py-16{padding-top:4rem;padding-bottom:4rem}.md\:text-left{text-align:left}.md\:text-2xl{font-size:1.5rem;line-height:2rem}.md\:text-3xl{font-size:1.875rem;line-height:2.25rem}.md\:text-5xl{font-size:3rem;line-height:1}.md\:text-\[11px\]{font-size:11px}.md\:text-base{font-size:1rem;line-height:1.5rem}.md\:text-lg{font-size:1.125rem;line-height:1.75rem}.md\:text-sm{font-size:.875rem;line-height:1.25rem}}</style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         body { 
@@ -1043,7 +1231,7 @@ try {
                     <span class="flex items-center gap-3.5">
                         <i class="fa-solid fa-robot w-5 text-center text-base text-[#FBBF24]"></i> Brands (Bot Key)
                     </span>
-                    <span class="text-[9px] font-bold px-2 py-0.5 rounded-full <?= $userBrandKey ? 'bg-[#00D89A]/20 text-[#00D89A] border border-[#00D89A]/40' : 'bg-slate-800 text-slate-400' ?>"><?= $userBrandKey ? '1 KEY' : 'NEW' ?></span>
+                    <span class="text-[9px] font-bold px-2 py-0.5 rounded-full <?= $userBrandKeys ? 'bg-[#00D89A]/20 text-[#00D89A] border border-[#00D89A]/40' : 'bg-slate-800 text-slate-400' ?>"><?= count($userBrandKeys) ?>/<?= (int) $brandQuota['limit'] ?></span>
                 </button>
                 <button onclick="switchView('view-custom-sms')" id="nav-custom-sms" class="nav-item w-full flex items-center gap-3.5 px-4 py-2.5 rounded-2xl hover:bg-[#092257] text-slate-300 transition">
                     <i class="fa-solid fa-envelope-open-text w-5 text-center text-base text-[#38BDF8]"></i> Custom SMS
@@ -1292,13 +1480,26 @@ try {
                                         <span>Expires On:</span>
                                         <b class="text-white"><?= date("d M Y, h:i A", strtotime($k['expires_at'])) ?></b>
                                     </div>
-                                        <div class="text-[11px] mt-2 <?= !empty($k['device_id']) ? 'text-[#00D89A]' : 'text-slate-400' ?>">
-                                            <?php if (!empty($k['device_id'])): ?>
-                                                <i class="fa-solid fa-mobile-screen"></i> Connected: <b class="text-white"><?= htmlspecialchars($k['device_name'] ?: 'Android Phone') ?></b>
-                                                <?php if (!empty($k['last_seen_at'])): ?><span class="text-slate-400">• seen <?= date("d M, h:i A", strtotime($k['last_seen_at'])) ?></span><?php endif; ?>
-                                            <?php else: ?>
-                                                <i class="fa-solid fa-mobile-screen"></i> Not connected yet — login with this key in the app
+                                        <?php $kDevs = $keyDevicesMap[(int) $k['id']] ?? []; $kMax = max(1, (int) ($k['max_devices'] ?? 1)); ?>
+                                        <div class="mt-3 rounded-2xl border border-[#0e275c] bg-[#04122d] p-3 space-y-2">
+                                            <div class="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                                                <span class="text-slate-400"><i class="fa-solid fa-mobile-screen text-[#00D9FF]"></i> Phones</span>
+                                                <span class="<?= count($kDevs) >= $kMax ? 'text-amber-400' : 'text-[#00D89A]' ?>"><?= count($kDevs) ?> / <?= $kMax ?> used</span>
+                                            </div>
+                                            <?php foreach ($kDevs as $dvc): ?>
+                                                <div class="flex items-center gap-2.5">
+                                                    <span class="w-7 h-7 rounded-lg bg-[#00D89A]/15 text-[#00D89A] flex items-center justify-center text-xs shrink-0"><i class="fa-solid fa-mobile-screen-button"></i></span>
+                                                    <div class="min-w-0">
+                                                        <div class="text-xs font-bold text-white truncate"><?= htmlspecialchars($dvc['device_name'] ?: 'Android Phone') ?></div>
+                                                        <div class="text-[10px] text-slate-400"><?= !empty($dvc['last_seen_at']) ? 'Active ' . date("d M, h:i A", strtotime($dvc['last_seen_at'])) : 'Connected' ?></div>
+                                                    </div>
+                                                    <span class="ml-auto w-2 h-2 rounded-full bg-[#00D89A] shadow-[0_0_8px_rgba(0,216,154,0.8)] shrink-0"></span>
+                                                </div>
+                                            <?php endforeach; ?>
+                                            <?php if (!$kDevs): ?>
+                                                <div class="text-[11px] text-slate-400">Not connected yet — login with this key in the app</div>
                                             <?php endif; ?>
+                                            <div class="text-[10px] text-slate-500 pt-1 border-t border-[#0e275c]"><i class="fa-solid fa-link text-amber-400"></i> <?= (int) ($k['max_brand_keys'] ?? 1) ?> brand key<?= (int) ($k['max_brand_keys'] ?? 1) != 1 ? 's' : '' ?> included</div>
                                         </div>
                                 </div>
                             <?php endforeach; ?>
@@ -1689,63 +1890,129 @@ try {
             <!-- 5. BRANDS (BOT KEY) VIEW -->
             <!-- ========================================================================= -->
             <section id="view-brands" class="content-view hidden space-y-6">
-                <div class="bg-[#04122d] border border-[#00D9FF]/40 rounded-3xl p-6 md:p-8 shadow-2xl space-y-6">
-                    <div class="pb-3 border-b border-[#0e275c] flex justify-between items-center">
-                        <h2 class="text-base md:text-lg font-bold text-white flex items-center gap-2">
-                            <i class="fa-solid fa-robot text-[#FBBF24]"></i> Brands &amp; Bot Key
-                        </h2>
-                        <span class="text-xs bg-[#03132e] text-[#00D9FF] px-3 py-1 rounded-full border border-[#174396]">Limit: 1 Key / Plan</span>
+                <!-- Header + quota -->
+                <div class="bg-gradient-to-br from-[#0b2559] to-[#04122d] border border-[#00D9FF]/40 rounded-3xl p-6 md:p-7 shadow-2xl">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-11 h-11 rounded-2xl bg-amber-500/15 text-[#FBBF24] flex items-center justify-center text-lg border border-amber-500/30"><i class="fa-solid fa-robot"></i></div>
+                            <div>
+                                <h2 class="text-base md:text-lg font-bold text-white">Brands &amp; API Keys</h2>
+                                <p class="text-[11px] text-slate-400">One key works in one place — website, app or bot.</p>
+                            </div>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <div class="text-xl font-black text-white"><?= count($userBrandKeys) ?><span class="text-slate-500 text-sm">/<?= (int) $brandQuota['limit'] ?></span></div>
+                            <div class="text-[10px] text-slate-400 font-bold uppercase">Keys used</div>
+                        </div>
                     </div>
+                    <?php $qPct = $brandQuota['limit'] > 0 ? min(100, round(count($userBrandKeys) / $brandQuota['limit'] * 100)) : 0; ?>
+                    <div class="mt-4 h-2 rounded-full bg-[#020817] overflow-hidden"><div class="h-2 snz-gradient rounded-full" style="width: <?= $qPct ?>%"></div></div>
+                </div>
 
-                    <?php if ($userBrandKey): ?>
-                        <div class="bg-[#020817] border border-[#00D9FF]/30 p-5 rounded-3xl space-y-4">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <span class="text-[10px] uppercase font-bold text-[#FBBF24] bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
-                                        <?= htmlspecialchars($userBrandKey['brand_name'] ?? 'Store Bot') ?>
+                <!-- Keys -->
+                <?php if ($userBrandKeys): ?>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <?php foreach ($userBrandKeys as $bk):
+                            $bConnected = !empty($bk['bound_fingerprint']);
+                            $bType = $bk['brand_type'] ?? '';
+                            $typeIcon = $bType === 'website' ? 'fa-globe' : ($bType === 'app' ? 'fa-mobile-screen' : ($bType === 'bot' ? 'fa-robot' : 'fa-key'));
+                            $typeLabel = $bType ? ucfirst($bType) : 'Brand'; ?>
+                            <div class="relative rounded-3xl p-5 border <?= $bConnected ? 'border-[#00D89A]/50 shadow-[0_0_18px_rgba(0,216,154,0.15)]' : 'border-amber-500/40' ?> bg-gradient-to-br from-[#071a44] to-[#020817] space-y-3">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="flex items-center gap-3 min-w-0">
+                                        <div class="w-10 h-10 rounded-2xl bg-[#00D9FF]/10 text-[#00D9FF] border border-[#00D9FF]/30 flex items-center justify-center shrink-0"><i class="fa-solid <?= $typeIcon ?>"></i></div>
+                                        <div class="min-w-0">
+                                            <div class="text-sm font-black text-white truncate"><?= htmlspecialchars($bk['brand_name'] ?: 'My Brand') ?></div>
+                                            <div class="text-[10px] font-bold text-slate-400 uppercase"><?= $typeLabel ?></div>
+                                        </div>
+                                    </div>
+                                    <span class="shrink-0 text-[9px] font-black px-2.5 py-1 rounded-full <?= $bConnected ? 'bg-[#00D89A]/15 text-[#00D89A] border border-[#00D89A]/40' : 'bg-amber-500/15 text-amber-400 border border-amber-500/40' ?>">
+                                        <?= $bConnected ? '● CONNECTED' : '○ NOT CONNECTED' ?>
                                     </span>
-                                    <h4 class="text-xs font-semibold text-slate-300 mt-2">Dedicated Bot Connection Key:</h4>
                                 </div>
-                                <span class="text-[10px] font-bold px-2.5 py-1 rounded-full <?= $userBrandKey['is_connected'] == 1 ? 'bg-[#00D89A]/15 text-[#00D89A] border border-[#00D89A]/30' : 'bg-amber-500/15 text-amber-400 border border-amber-500/30' ?>">
-                                    <?= $userBrandKey['is_connected'] == 1 ? 'CONNECTED & ACTIVE' : 'WAITING FOR FIRST CONNECT' ?>
-                                </span>
-                            </div>
 
-                            <div class="bg-[#04122d] border border-[#0e275c] p-3 rounded-2xl flex items-center justify-between gap-2">
-                                <span class="text-sm font-mono font-black text-[#00D89A] tracking-wider select-all break-all min-w-0"><?= htmlspecialchars($userBrandKey['api_key']) ?></span>
-                                <button onclick="copyText(<?= htmlspecialchars(json_encode($userBrandKey['api_key']), ENT_QUOTES) ?>)" class="text-xs bg-[#092257] hover:bg-[#007BFF] text-white px-3 py-1.5 rounded-xl border border-[#174396] transition flex items-center gap-1.5 shrink-0">
-                                    <i class="fa-regular fa-copy"></i> Copy
-                                </button>
-                            </div>
+                                <div class="bg-[#020817] border border-[#0e275c] p-3 rounded-2xl flex items-center justify-between gap-2">
+                                    <span class="text-xs font-mono font-black text-[#00D89A] tracking-wider select-all break-all min-w-0"><?= htmlspecialchars($bk['api_key']) ?></span>
+                                    <button onclick="copyText(<?= htmlspecialchars(json_encode($bk['api_key']), ENT_QUOTES) ?>)" class="text-xs bg-[#092257] hover:bg-[#007BFF] text-white px-3 py-1.5 rounded-xl border border-[#174396] transition shrink-0"><i class="fa-regular fa-copy"></i></button>
+                                </div>
 
-                            <div class="text-[11px] text-slate-300 flex justify-between items-center border-t border-[#0e275c] pt-3">
-                                <span>Lifecycle Status:</span>
-                                <?php if ($userBrandKey['is_connected'] == 1): ?>
-                                    <b class="text-[#00D89A]">Expires: <?= !empty($userBrandKey['expires_at']) ? date("d M Y, h:i A", strtotime($userBrandKey['expires_at'])) : 'N/A' ?></b>
-                                <?php else: ?>
-                                    <b class="text-amber-400">Countdown begins when first connected</b>
-                                <?php endif; ?>
-                            </div>
+                                <div class="text-[11px] space-y-1.5">
+                                    <?php if ($bConnected): ?>
+                                        <div class="flex items-center gap-2 text-[#00D89A]"><i class="fa-solid fa-plug-circle-check w-4"></i> <span class="text-slate-400">Connected to:</span> <b class="text-white break-all"><?= htmlspecialchars($bk['bound_label']) ?></b></div>
+                                        <?php if (!empty($bk['last_used_at'])): ?><div class="flex items-center gap-2 text-slate-400"><i class="fa-regular fa-clock w-4"></i> Last used <?= date("d M, h:i A", strtotime($bk['last_used_at'])) ?></div><?php endif; ?>
+                                    <?php else: ?>
+                                        <div class="flex items-center gap-2 text-amber-400"><i class="fa-solid fa-plug w-4"></i> Waiting — it connects to the first website/app/bot that uses it</div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($bk['brand_link'])): ?><div class="flex items-center gap-2 text-slate-400"><i class="fa-solid fa-link w-4"></i> <span class="break-all"><?= htmlspecialchars($bk['brand_link']) ?></span></div><?php endif; ?>
+                                    <?php if (!empty($bk['whatsapp'])): ?><div class="flex items-center gap-2 text-slate-400"><i class="fa-brands fa-whatsapp w-4 text-[#25D366]"></i> <?= htmlspecialchars($bk['whatsapp']) ?></div><?php endif; ?>
+                                </div>
 
-                            <form method="POST" onsubmit="return confirm('Revoke this key?');" class="pt-2 text-right">
-                                <input type="hidden" name="csrf" value="<?= $CSRF ?>">
-                                <input type="hidden" name="action_revoke_brand_key" value="1">
-                                <input type="hidden" name="revoke_key_id" value="<?= $userBrandKey['id'] ?>">
-                                <button type="submit" class="text-xs text-rose-400 hover:text-rose-300 font-bold transition">
-                                    <i class="fa-solid fa-ban"></i> Revoke Key
-                                </button>
-                            </form>
+                                <div class="flex gap-2 pt-1">
+                                    <?php if ($bConnected): ?>
+                                        <form method="POST" class="flex-1" onsubmit="return confirm('Disconnect this key so you can use it on a new website/app/bot?');">
+                                            <input type="hidden" name="csrf" value="<?= $CSRF ?>">
+                                            <input type="hidden" name="action_disconnect_brand_key" value="1">
+                                            <input type="hidden" name="brand_key_id" value="<?= (int) $bk['id'] ?>">
+                                            <button type="submit" class="w-full text-[11px] font-bold text-[#00D9FF] bg-[#00D9FF]/10 border border-[#00D9FF]/30 py-2.5 rounded-xl"><i class="fa-solid fa-right-left"></i> Move to new place</button>
+                                        </form>
+                                    <?php endif; ?>
+                                    <form method="POST" class="<?= $bConnected ? '' : 'flex-1' ?>" onsubmit="return confirm('Revoke (delete) this key? Anything using it will stop working.');">
+                                        <input type="hidden" name="csrf" value="<?= $CSRF ?>">
+                                        <input type="hidden" name="action_revoke_brand_key" value="1">
+                                        <input type="hidden" name="revoke_key_id" value="<?= (int) $bk['id'] ?>">
+                                        <button type="submit" class="w-full text-[11px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/30 px-4 py-2.5 rounded-xl"><i class="fa-solid fa-ban"></i> Revoke</button>
+                                    </form>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Create -->
+                <div class="bg-[#04122d] border border-[#00D9FF]/40 rounded-3xl p-6 md:p-7 shadow-2xl">
+                    <?php if ($brandQuota['limit'] <= 0): ?>
+                        <div class="text-center space-y-3 py-2">
+                            <div class="w-12 h-12 rounded-full bg-amber-500/15 text-amber-400 flex items-center justify-center text-xl mx-auto"><i class="fa-solid fa-lock"></i></div>
+                            <p class="text-sm font-bold text-white">Buy a plan to create brand keys</p>
+                            <button type="button" onclick="switchView('view-plans')" class="snz-gradient text-[#061535] font-black px-5 py-2.5 rounded-xl text-xs">View Plans</button>
+                        </div>
+                    <?php elseif ($brandQuota['used'] >= $brandQuota['limit']): ?>
+                        <div class="text-center space-y-2 py-2">
+                            <p class="text-sm font-bold text-white">All <?= (int) $brandQuota['limit'] ?> brand keys used</p>
+                            <p class="text-xs text-slate-400">Revoke an old key or upgrade your plan to create more.</p>
                         </div>
                     <?php else: ?>
+                        <h3 class="text-sm font-bold text-white mb-4 flex items-center gap-2"><i class="fa-solid fa-plus text-[#00D9FF]"></i> Create Brand Key <span class="text-[10px] text-slate-400 font-semibold">(<?= (int) ($brandQuota['limit'] - $brandQuota['used']) ?> left)</span></h3>
                         <form method="POST" class="space-y-4">
-                                <input type="hidden" name="csrf" value="<?= $CSRF ?>">
+                            <input type="hidden" name="csrf" value="<?= $CSRF ?>">
                             <input type="hidden" name="action_generate_brand_key" value="1">
                             <div>
-                                <label class="text-xs font-semibold text-slate-200 block mb-1.5">Brand / Bot Store Name:</label>
-                                <input type="text" name="brand_name" required placeholder="e.g., My Store Bot" class="w-full bg-[#020817] border border-[#0e275c] rounded-2xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#00D9FF]">
+                                <label class="text-xs font-semibold text-slate-200 block mb-1.5">Brand Name</label>
+                                <input type="text" name="brand_name" required maxlength="100" placeholder="e.g., My Store" class="w-full bg-[#020817] border border-[#0e275c] rounded-2xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#00D9FF]">
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-slate-200 block mb-1.5">Where will you use it?</label>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <?php foreach (['website' => ['fa-globe', 'Website'], 'app' => ['fa-mobile-screen', 'App'], 'bot' => ['fa-robot', 'Bot']] as $tv => $tl): ?>
+                                        <label class="cursor-pointer">
+                                            <input type="radio" name="brand_type" value="<?= $tv ?>" class="peer sr-only" required <?= $tv === 'website' ? 'checked' : '' ?> onchange="brandTypeHint()">
+                                            <div class="text-center py-3 rounded-2xl border border-[#0e275c] bg-[#020817] text-slate-300 text-xs font-bold peer-checked:border-[#00D9FF] peer-checked:text-[#00D9FF] peer-checked:bg-[#00D9FF]/10 transition">
+                                                <i class="fa-solid <?= $tl[0] ?> block text-base mb-1"></i><?= $tl[1] ?>
+                                            </div>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                            <div>
+                                <label id="brandLinkLabel" class="text-xs font-semibold text-slate-200 block mb-1.5">Website Link</label>
+                                <input type="text" id="brandLinkInput" name="brand_link" required maxlength="255" placeholder="https://mystore.com" class="w-full bg-[#020817] border border-[#0e275c] rounded-2xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#00D9FF]">
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-slate-200 block mb-1.5"><i class="fa-brands fa-whatsapp text-[#25D366]"></i> WhatsApp Number</label>
+                                <input type="tel" name="brand_whatsapp" required maxlength="20" placeholder="01XXXXXXXXX" class="w-full bg-[#020817] border border-[#0e275c] rounded-2xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#00D9FF]">
                             </div>
                             <button type="submit" class="w-full snz-gradient text-[#061535] font-black py-3.5 rounded-2xl text-xs transition flex items-center justify-center gap-2">
-                                <i class="fa-solid fa-key"></i> Generate Bot Connection Key
+                                <i class="fa-solid fa-key"></i> Generate Brand Key
                             </button>
                         </form>
                     <?php endif; ?>
@@ -1869,13 +2136,26 @@ try {
                                         <div class="text-[11px] text-slate-400">
                                             Expires: <b class="text-slate-200"><?= date("d M Y, h:i A", strtotime($k['expires_at'])) ?></b>
                                         </div>
-                                        <div class="text-[11px] mt-1 <?= !empty($k['device_id']) ? 'text-[#00D89A]' : 'text-slate-400' ?>">
-                                            <?php if (!empty($k['device_id'])): ?>
-                                                <i class="fa-solid fa-mobile-screen"></i> Connected: <b class="text-white"><?= htmlspecialchars($k['device_name'] ?: 'Android Phone') ?></b>
-                                                <?php if (!empty($k['last_seen_at'])): ?><span class="text-slate-400">• seen <?= date("d M, h:i A", strtotime($k['last_seen_at'])) ?></span><?php endif; ?>
-                                            <?php else: ?>
-                                                <i class="fa-solid fa-mobile-screen"></i> Not connected yet — login with this key in the app
+                                        <?php $kDevs = $keyDevicesMap[(int) $k['id']] ?? []; $kMax = max(1, (int) ($k['max_devices'] ?? 1)); ?>
+                                        <div class="mt-3 rounded-2xl border border-[#0e275c] bg-[#04122d] p-3 space-y-2">
+                                            <div class="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                                                <span class="text-slate-400"><i class="fa-solid fa-mobile-screen text-[#00D9FF]"></i> Phones</span>
+                                                <span class="<?= count($kDevs) >= $kMax ? 'text-amber-400' : 'text-[#00D89A]' ?>"><?= count($kDevs) ?> / <?= $kMax ?> used</span>
+                                            </div>
+                                            <?php foreach ($kDevs as $dvc): ?>
+                                                <div class="flex items-center gap-2.5">
+                                                    <span class="w-7 h-7 rounded-lg bg-[#00D89A]/15 text-[#00D89A] flex items-center justify-center text-xs shrink-0"><i class="fa-solid fa-mobile-screen-button"></i></span>
+                                                    <div class="min-w-0">
+                                                        <div class="text-xs font-bold text-white truncate"><?= htmlspecialchars($dvc['device_name'] ?: 'Android Phone') ?></div>
+                                                        <div class="text-[10px] text-slate-400"><?= !empty($dvc['last_seen_at']) ? 'Active ' . date("d M, h:i A", strtotime($dvc['last_seen_at'])) : 'Connected' ?></div>
+                                                    </div>
+                                                    <span class="ml-auto w-2 h-2 rounded-full bg-[#00D89A] shadow-[0_0_8px_rgba(0,216,154,0.8)] shrink-0"></span>
+                                                </div>
+                                            <?php endforeach; ?>
+                                            <?php if (!$kDevs): ?>
+                                                <div class="text-[11px] text-slate-400">Not connected yet — login with this key in the app</div>
                                             <?php endif; ?>
+                                            <div class="text-[10px] text-slate-500 pt-1 border-t border-[#0e275c]"><i class="fa-solid fa-link text-amber-400"></i> <?= (int) ($k['max_brand_keys'] ?? 1) ?> brand key<?= (int) ($k['max_brand_keys'] ?? 1) != 1 ? 's' : '' ?> included</div>
                                         </div>
                                     </div>
 
@@ -1918,55 +2198,42 @@ try {
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    <!-- Free Trial Card -->
-                    <div class="bg-[#04122d] border border-[#00D9FF]/40 rounded-3xl p-6 flex flex-col justify-between shadow-xl">
-                        <div>
-                            <span class="bg-[#00D89A]/15 text-[#00D89A] text-[11px] font-bold px-3 py-1 rounded-full border border-[#00D89A]/30">Free Access</span>
-                            <h3 class="text-base font-bold text-white mt-3">30 Hours Trial</h3>
-                            <p class="text-slate-300 text-xs mt-1">Experience full automation features for 30 hours completely free.</p>
-                            <div class="text-3xl font-black text-white my-4">৳ 0</div>
-                        </div>
-                        <form method="POST">
+                    <?php foreach ($allPlans as $i => $pl):
+                        $final = snzPlanFinalPrice($pl);
+                        $disc = (float) $pl['discount_percent'];
+                        $isTrial = !empty($pl['is_trial']) || $final <= 0;
+                        $trialUsed = $isTrial && !empty($user['has_used_trial']);
+                        $featured = !empty($pl['badge']) && stripos($pl['badge'], 'popular') !== false; ?>
+                        <div class="relative rounded-3xl p-6 flex flex-col justify-between shadow-xl border <?= $featured ? 'border-[#00D89A]/60 bg-gradient-to-br from-[#06303a] to-[#04122d]' : 'border-[#00D9FF]/30 bg-gradient-to-br from-[#0b2559] to-[#04122d]' ?>">
+                            <?php if ($disc > 0): ?><span class="absolute -top-3 right-5 text-[10px] font-black px-3 py-1 rounded-full bg-rose-500 text-white shadow-lg"><?= rtrim(rtrim(number_format($disc, 2), '0'), '.') ?>% OFF</span><?php endif; ?>
+                            <div>
+                                <?php if (!empty($pl['badge'])): ?><span class="<?= $featured ? 'snz-gradient text-[#061535]' : 'bg-[#00D9FF]/10 text-[#00D9FF] border border-[#00D9FF]/30' ?> text-[11px] font-black px-3 py-1 rounded-full"><?= htmlspecialchars($pl['badge']) ?></span><?php endif; ?>
+                                <h3 class="text-base font-bold text-white mt-3"><?= htmlspecialchars($pl['name']) ?></h3>
+                                <?php if (!empty($pl['description'])): ?><p class="text-slate-300 text-xs mt-1"><?= htmlspecialchars($pl['description']) ?></p><?php endif; ?>
+                                <div class="my-4 flex items-end gap-2">
+                                    <span class="text-3xl font-black text-white">৳ <?= rtrim(rtrim(number_format($final, 2), '0'), '.') ?></span>
+                                    <?php if ($disc > 0): ?><span class="text-sm text-slate-500 line-through mb-1">৳ <?= rtrim(rtrim(number_format((float) $pl['price'], 2), '0'), '.') ?></span><?php endif; ?>
+                                </div>
+                                <ul class="space-y-2 text-xs text-slate-200 mb-5">
+                                    <li class="flex items-center gap-2"><i class="fa-regular fa-clock text-[#00D9FF] w-4"></i> <?= snzDurationLabel($pl['duration_hours']) ?> access</li>
+                                    <li class="flex items-center gap-2"><i class="fa-solid fa-mobile-screen text-[#00D89A] w-4"></i> <?= (int) $pl['max_devices'] ?> phone<?= (int) $pl['max_devices'] > 1 ? 's' : '' ?> per key</li>
+                                    <li class="flex items-center gap-2"><i class="fa-solid fa-link text-amber-400 w-4"></i> <?= (int) $pl['max_brand_keys'] ?> brand key<?= (int) $pl['max_brand_keys'] != 1 ? 's' : '' ?></li>
+                                    <li class="flex items-center gap-2"><i class="fa-solid fa-check text-[#00D89A] w-4"></i> bKash, Nagad, Rocket, Binance &amp; QR</li>
+                                </ul>
+                            </div>
+                            <form method="POST">
                                 <input type="hidden" name="csrf" value="<?= $CSRF ?>">
-                            <input type="hidden" name="action_buy_plan" value="1">
-                            <input type="hidden" name="plan_type" value="free_trial">
-                            <button type="submit" class="w-full snz-gradient text-[#061535] font-black py-3 rounded-2xl text-xs transition">
-                                <?= $user['has_used_trial'] == 1 ? 'Claimed (1-Time Only)' : 'Claim Free Trial' ?>
-                            </button>
-                        </form>
-                    </div>
-
-                    <!-- 30 TK Plan Card -->
-                    <div class="bg-[#04122d] border border-[#007BFF]/50 rounded-3xl p-6 flex flex-col justify-between shadow-xl">
-                        <div>
-                            <span class="bg-[#007BFF]/20 text-[#00D9FF] text-[11px] font-bold px-3 py-1 rounded-full border border-[#007BFF]/40">Standard</span>
-                            <h3 class="text-base font-bold text-white mt-3">7-Day License Plan</h3>
-                            <p class="text-slate-300 text-xs mt-1">7 days of unlimited SMS reader and 1 dedicated Bot Key.</p>
-                            <div class="text-3xl font-black text-white my-4">৳ 30</div>
+                                <input type="hidden" name="action_buy_plan" value="1">
+                                <input type="hidden" name="plan_id" value="<?= (int) $pl['id'] ?>">
+                                <button type="submit" <?= $trialUsed ? 'disabled' : '' ?> class="w-full <?= $trialUsed ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'snz-gradient text-[#061535]' ?> font-black py-3 rounded-2xl text-xs transition">
+                                    <?= $trialUsed ? 'Claimed (1-Time Only)' : ($isTrial ? 'Claim Free Trial' : 'Purchase with Wallet') ?>
+                                </button>
+                            </form>
                         </div>
-                        <form method="POST">
-                                <input type="hidden" name="csrf" value="<?= $CSRF ?>">
-                            <input type="hidden" name="action_buy_plan" value="1">
-                            <input type="hidden" name="plan_type" value="plan_30">
-                            <button type="submit" class="w-full bg-[#007BFF] hover:bg-[#0056b3] text-white font-bold py-3 rounded-2xl text-xs transition">Purchase with Wallet</button>
-                        </form>
-                    </div>
-
-                    <!-- 50 TK Plan Card -->
-                    <div class="bg-[#04122d] border border-[#00D89A]/50 rounded-3xl p-6 flex flex-col justify-between shadow-xl">
-                        <div>
-                            <span class="snz-gradient text-[#061535] text-[11px] font-black px-3 py-1 rounded-full">Popular Choice</span>
-                            <h3 class="text-base font-bold text-white mt-3">30-Day License Plan</h3>
-                            <p class="text-slate-300 text-xs mt-1">Full 1 month of uninterrupted service with 1 dedicated Bot Key.</p>
-                            <div class="text-3xl font-black text-white my-4">৳ 50</div>
-                        </div>
-                        <form method="POST">
-                                <input type="hidden" name="csrf" value="<?= $CSRF ?>">
-                            <input type="hidden" name="action_buy_plan" value="1">
-                            <input type="hidden" name="plan_type" value="plan_50">
-                            <button type="submit" class="w-full snz-gradient text-[#061535] font-black py-3 rounded-2xl text-xs transition shadow-lg shadow-cyan-500/25">Purchase with Wallet</button>
-                        </form>
-                    </div>
+                    <?php endforeach; ?>
+                    <?php if (!$allPlans): ?>
+                        <div class="md:col-span-3 text-center text-xs text-slate-400 py-10">No plans available right now.</div>
+                    <?php endif; ?>
                 </div>
             </section>
 
@@ -2430,6 +2697,15 @@ public class PaymentVerifier {
                 qrBox.classList.add('hidden');
                 infoBox.classList.remove('hidden');
             }
+        }
+
+        function brandTypeHint() {
+            const t = (document.querySelector('input[name="brand_type"]:checked') || {}).value;
+            const lbl = document.getElementById('brandLinkLabel'), inp = document.getElementById('brandLinkInput');
+            if (!lbl || !inp) return;
+            if (t === 'bot') { lbl.innerText = 'Bot Username / Link'; inp.placeholder = '@mystore_bot or https://t.me/mystore_bot'; }
+            else if (t === 'app') { lbl.innerText = 'App Name / Play Store Link'; inp.placeholder = 'https://play.google.com/store/apps/details?id=...'; }
+            else { lbl.innerText = 'Website Link'; inp.placeholder = 'https://mystore.com'; }
         }
 
         function copyText(str) {

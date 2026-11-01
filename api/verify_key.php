@@ -122,6 +122,175 @@ if (!function_exists('snzEnsureDeviceColumns')) {
     }
 }
 
+// -------------------------------------------------------------------------
+// 📦 Plans / Devices / Brand Keys — টেবিল একবারই তৈরি হয় (.db_plans_v1)
+// -------------------------------------------------------------------------
+if (!function_exists('snzEnsurePlanSchema')) {
+    function snzRootDir() {
+        return basename(__DIR__) === 'api' ? dirname(__DIR__) : __DIR__;
+    }
+
+    function snzEnsurePlanSchema(PDO $pdo) {
+        $flag = snzRootDir() . '/.db_plans_v1';
+        if (is_file($flag)) return;
+        $sqls = [
+            "CREATE TABLE IF NOT EXISTS `plans` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `name` VARCHAR(100) NOT NULL,
+                `price` DECIMAL(10,2) NOT NULL DEFAULT 0,
+                `discount_percent` DECIMAL(5,2) NOT NULL DEFAULT 0,
+                `duration_hours` INT NOT NULL DEFAULT 720,
+                `max_devices` INT NOT NULL DEFAULT 1,
+                `max_brand_keys` INT NOT NULL DEFAULT 1,
+                `badge` VARCHAR(40) NULL,
+                `description` VARCHAR(255) NULL,
+                `is_trial` TINYINT(1) NOT NULL DEFAULT 0,
+                `status` VARCHAR(20) NOT NULL DEFAULT 'active',
+                `sort_order` INT NOT NULL DEFAULT 0,
+                `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) DEFAULT CHARSET=utf8mb4",
+            "CREATE TABLE IF NOT EXISTS `key_devices` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `key_id` INT NOT NULL,
+                `device_id` VARCHAR(100) NOT NULL,
+                `device_name` VARCHAR(150) NULL,
+                `bound_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                `last_seen_at` DATETIME NULL,
+                UNIQUE KEY `uq_key_device` (`key_id`, `device_id`),
+                KEY `idx_kd_key` (`key_id`)
+            ) DEFAULT CHARSET=utf8mb4",
+            "ALTER TABLE `user_keys` ADD COLUMN `plan_id` INT NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `max_devices` INT NOT NULL DEFAULT 1",
+            "ALTER TABLE `user_keys` ADD COLUMN `max_brand_keys` INT NOT NULL DEFAULT 1",
+            "ALTER TABLE `user_keys` ADD COLUMN `device_id` VARCHAR(100) NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `device_name` VARCHAR(150) NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `device_bound_at` DATETIME NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `last_seen_at` DATETIME NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `brand_name` VARCHAR(128) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `brand_type` VARCHAR(20) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `brand_link` VARCHAR(255) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `whatsapp` VARCHAR(30) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `bound_fingerprint` VARCHAR(255) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `bound_label` VARCHAR(255) NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `bound_at` DATETIME NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `last_used_at` DATETIME NULL",
+            "ALTER TABLE `brand_keys` ADD COLUMN `created_at` DATETIME NULL",
+        ];
+        foreach ($sqls as $sql) {
+            try { $pdo->exec($sql); } catch (Throwable $e) {}
+        }
+        // আগের ৩টা প্ল্যান
+        try {
+            if ((int) $pdo->query("SELECT COUNT(*) FROM plans")->fetchColumn() === 0) {
+                $ins = $pdo->prepare("INSERT INTO plans (name, price, discount_percent, duration_hours, max_devices, max_brand_keys, badge, description, is_trial, status, sort_order) VALUES (?, ?, 0, ?, 1, 1, ?, ?, ?, 'active', ?)");
+                $ins->execute(['Free Trial (30 Hours)', 0, 30, '1st Time Free', 'Test all automated features completely free of charge.', 1, 1]);
+                $ins->execute(['Standard Plan (30 BDT)', 30, 168, 'Standard', '7 days of uninterrupted SMS & Binance automation.', 0, 2]);
+                $ins->execute(['Premium Plan (50 BDT)', 50, 720, 'Popular Choice', 'Full 1 month of uninterrupted high-priority processing.', 0, 3]);
+            }
+        } catch (Throwable $e) {}
+        // আগে এক-ফোন লক করা কী গুলো নতুন ডিভাইস টেবিলে
+        try {
+            $pdo->exec("INSERT IGNORE INTO key_devices (key_id, device_id, device_name, bound_at, last_seen_at)
+                        SELECT id, device_id, device_name, COALESCE(device_bound_at, NOW()), last_seen_at
+                        FROM user_keys WHERE device_id IS NOT NULL AND device_id <> ''");
+        } catch (Throwable $e) {}
+        // পুরনো কী গুলোর plan_id (নাম মিলিয়ে)
+        try {
+            $pdo->exec("UPDATE user_keys uk JOIN plans p ON p.name = uk.plan_name SET uk.plan_id = p.id WHERE uk.plan_id IS NULL");
+        } catch (Throwable $e) {}
+        @file_put_contents($flag, date('c'));
+        snzWritePlansCache($pdo);
+    }
+
+    function snzGetPlans(PDO $pdo, $onlyActive = true) {
+        try {
+            $sql = "SELECT * FROM plans " . ($onlyActive ? "WHERE status = 'active' " : "") . "ORDER BY sort_order ASC, price ASC, id ASC";
+            return $pdo->query($sql)->fetchAll();
+        } catch (Throwable $e) {
+            return [];
+        }
+    }
+
+    function snzGetPlan(PDO $pdo, $id) {
+        try {
+            $st = $pdo->prepare("SELECT * FROM plans WHERE id = ? LIMIT 1");
+            $st->execute([(int) $id]);
+            return $st->fetch() ?: null;
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+
+    /** ডিসকাউন্টের পর আসল দাম */
+    function snzPlanFinalPrice(array $p) {
+        $price = (float) ($p['price'] ?? 0);
+        $disc = max(0, min(100, (float) ($p['discount_percent'] ?? 0)));
+        return round($price * (100 - $disc) / 100, 2);
+    }
+
+    function snzDurationLabel($hours) {
+        $hours = (int) $hours;
+        if ($hours > 0 && $hours % 24 === 0) {
+            $d = $hours / 24;
+            return $d . ($d == 1 ? ' Day' : ' Days');
+        }
+        return $hours . ($hours == 1 ? ' Hour' : ' Hours');
+    }
+
+    /** হোমপেজ যেন ডাটাবেজ ছাড়াই দ্রুত প্ল্যান দেখাতে পারে */
+    function snzWritePlansCache(PDO $pdo) {
+        @file_put_contents(snzRootDir() . '/plans_cache.json', json_encode(snzGetPlans($pdo, true), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    }
+
+    function snzReadPlansCache() {
+        $f = snzRootDir() . '/plans_cache.json';
+        if (!is_file($f)) return null;
+        $d = json_decode((string) @file_get_contents($f), true);
+        return is_array($d) ? $d : null;
+    }
+
+    /** কী অনুযায়ী কানেক্টেড ফোনের তালিকা: [key_id => [rows]] */
+    function snzKeyDevices(PDO $pdo, array $keyIds) {
+        $out = [];
+        $keyIds = array_values(array_filter(array_map('intval', $keyIds)));
+        if (!$keyIds) return $out;
+        try {
+            $in = implode(',', array_fill(0, count($keyIds), '?'));
+            $st = $pdo->prepare("SELECT * FROM key_devices WHERE key_id IN ($in) ORDER BY bound_at ASC");
+            $st->execute($keyIds);
+            foreach ($st->fetchAll() as $r) $out[(int) $r['key_id']][] = $r;
+        } catch (Throwable $e) {}
+        return $out;
+    }
+
+    /** ইউজার কয়টা Brand Key বানাতে পারবে (চালু প্ল্যান গুলোর যোগফল) আর কয়টা বানিয়েছে */
+    function snzBrandQuota(PDO $pdo, $userId) {
+        $limit = 0; $used = 0;
+        try {
+            $st = $pdo->prepare("SELECT COALESCE(SUM(GREATEST(max_brand_keys, 0)), 0) FROM user_keys WHERE user_id = ? AND status = 'active' AND expires_at > NOW()");
+            $st->execute([$userId]);
+            $limit = (int) $st->fetchColumn();
+            $st = $pdo->prepare("SELECT COUNT(*) FROM brand_keys WHERE user_id = ? AND status != 'revoked'");
+            $st->execute([$userId]);
+            $used = (int) $st->fetchColumn();
+        } catch (Throwable $e) {}
+        return ['limit' => $limit, 'used' => $used];
+    }
+
+    /** ইউজারের চালু প্ল্যানের সবচেয়ে দূরের মেয়াদ (না থাকলে null) */
+    function snzActivePlanExpiry(PDO $pdo, $userId) {
+        try {
+            $st = $pdo->prepare("SELECT MAX(expires_at) FROM user_keys WHERE user_id = ? AND status = 'active' AND expires_at > NOW()");
+            $st->execute([$userId]);
+            $v = $st->fetchColumn();
+            return $v ?: null;
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+}
+// -------------------------------------------------------------------------
+
 sendApiHeaders('GET, POST, OPTIONS');
 
 $data = readRequestData();
@@ -146,13 +315,14 @@ if (!$pdo) {
 }
 ensureDatabaseIndexes($pdo);
 snzEnsureDeviceColumns($pdo);
+snzEnsurePlanSchema($pdo);
 
 // অ্যাপ যে ফোন থেকে লগইন করছে
 $deviceId = substr(preg_replace('/[^A-Za-z0-9_.:-]/', '', (string) ($data['device_id'] ?? '')), 0, 100);
 $deviceName = trim(mb_substr(strip_tags((string) ($data['device_name'] ?? '')), 0, 150));
 
 // ইনডেক্স ব্যবহার করে দ্রুত সার্চ; একই key এর একাধিক row থাকলে সবচেয়ে বেশি মেয়াদিটা
-$stmt = $pdo->prepare("SELECT id, plan_name, expires_at, device_id, device_name FROM user_keys WHERE license_key = ? AND status = 'active' ORDER BY expires_at DESC LIMIT 1");
+$stmt = $pdo->prepare("SELECT id, plan_name, expires_at, device_id, device_name, max_devices FROM user_keys WHERE license_key = ? AND status = 'active' ORDER BY expires_at DESC LIMIT 1");
 $stmt->execute([$key]);
 $keyRow = $stmt->fetch();
 
@@ -166,29 +336,39 @@ if ($expireTime === false || $expireTime < time()) {
 }
 
 // ---------------------------------------------------------------------
-// 📱 এক কী = এক ফোন
-//  - প্রথমবার যে ফোনে লগইন হবে, কী সেই ফোনে লক হয়ে যাবে
-//  - অন্য ফোনে লগইন করতে চাইলে আটকে যাবে (অ্যাডমিন "Reset Device" করলে আবার নতুন ফোনে লগইন করা যাবে)
+// 📱 প্ল্যান অনুযায়ী কয়টা ফোনে কী চলবে (max_devices)
+//  - নতুন ফোন লগইন করলে জায়গা থাকলে যুক্ত হয়, না থাকলে আটকে যায়
+//  - অ্যাডমিন প্যানেল থেকে কোনো ফোন রিমুভ করলে সেই জায়গায় নতুন ফোন লগইন করা যায়
 // ---------------------------------------------------------------------
 if ($deviceId !== '') {
-    $boundId = (string) ($keyRow['device_id'] ?? '');
-    if ($boundId === '') {
-        $pdo->prepare("UPDATE user_keys SET device_id = ?, device_name = ?, device_bound_at = NOW(), last_seen_at = NOW() WHERE id = ?")
-            ->execute([$deviceId, $deviceName !== '' ? $deviceName : 'Android Phone', $keyRow['id']]);
-    } elseif (!hash_equals($boundId, $deviceId)) {
-        $who = $keyRow['device_name'] ?: 'another phone';
-        jsonResponse(403, [
-            "status" => "error",
-            "message" => "This key is already connected to " . $who . ". One key works on one phone only. Ask admin to reset the device.",
-            "reason" => "device_locked",
-        ]);
+    $maxDevices = max(1, (int) ($keyRow['max_devices'] ?? 1));
+    $dv = $pdo->prepare("SELECT id, device_name FROM key_devices WHERE key_id = ? AND device_id = ? LIMIT 1");
+    $dv->execute([$keyRow['id'], $deviceId]);
+    $known = $dv->fetch();
+
+    if ($known) {
+        $pdo->prepare("UPDATE key_devices SET last_seen_at = NOW()" . ($deviceName !== '' ? ", device_name = ?" : "") . " WHERE id = ?")
+            ->execute($deviceName !== '' ? [$deviceName, $known['id']] : [$known['id']]);
     } else {
-        if ($deviceName !== '' && $deviceName !== (string) $keyRow['device_name']) {
-            $pdo->prepare("UPDATE user_keys SET device_name = ?, last_seen_at = NOW() WHERE id = ?")->execute([$deviceName, $keyRow['id']]);
-        } else {
-            $pdo->prepare("UPDATE user_keys SET last_seen_at = NOW() WHERE id = ?")->execute([$keyRow['id']]);
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM key_devices WHERE key_id = ?");
+        $cnt->execute([$keyRow['id']]);
+        $used = (int) $cnt->fetchColumn();
+        if ($used >= $maxDevices) {
+            $names = $pdo->prepare("SELECT device_name FROM key_devices WHERE key_id = ? ORDER BY bound_at ASC");
+            $names->execute([$keyRow['id']]);
+            $list = implode(', ', array_filter(array_map('strval', $names->fetchAll(PDO::FETCH_COLUMN)))) ?: 'another phone';
+            jsonResponse(403, [
+                "status" => "error",
+                "message" => "This key is already connected to " . $list . " (" . $used . "/" . $maxDevices . " phones). Ask admin to remove a phone or upgrade your plan.",
+                "reason" => "device_locked",
+            ]);
         }
+        $pdo->prepare("INSERT INTO key_devices (key_id, device_id, device_name, bound_at, last_seen_at) VALUES (?, ?, ?, NOW(), NOW())")
+            ->execute([$keyRow['id'], $deviceId, $deviceName !== '' ? $deviceName : 'Android Phone']);
     }
+    // পুরনো কলাম (প্রথম ফোন) আপডেট রাখা
+    $pdo->prepare("UPDATE user_keys SET device_id = COALESCE(NULLIF(device_id, ''), ?), device_name = COALESCE(NULLIF(device_name, ''), ?), last_seen_at = NOW() WHERE id = ?")
+        ->execute([$deviceId, $deviceName !== '' ? $deviceName : 'Android Phone', $keyRow['id']]);
 }
 
 jsonResponse(200, [
