@@ -103,6 +103,25 @@ if (!function_exists('ensureDatabaseIndexes')) {
 }
 // -------------------------------------------------------------------------
 
+// -------------------------------------------------------------------------
+// লাইসেন্স কী → এক ফোনে লক: user_keys টেবিলে ডিভাইস কলাম (একবারই তৈরি হয়)
+// -------------------------------------------------------------------------
+if (!function_exists('snzEnsureDeviceColumns')) {
+    function snzEnsureDeviceColumns(PDO $pdo) {
+        $flag = (basename(__DIR__) === 'api' ? dirname(__DIR__) : __DIR__) . '/.db_device_cols_v1';
+        if (is_file($flag)) return;
+        foreach ([
+            "ALTER TABLE `user_keys` ADD COLUMN `device_id` VARCHAR(100) NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `device_name` VARCHAR(150) NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `device_bound_at` DATETIME NULL",
+            "ALTER TABLE `user_keys` ADD COLUMN `last_seen_at` DATETIME NULL",
+        ] as $sql) {
+            try { $pdo->exec($sql); } catch (Throwable $e) {}
+        }
+        @file_put_contents($flag, date('c'));
+    }
+}
+
 sendApiHeaders('GET, POST, OPTIONS');
 
 $data = readRequestData();
@@ -126,9 +145,14 @@ if (!$pdo) {
     jsonResponse(500, ["status" => "error", "message" => "Database error."]);
 }
 ensureDatabaseIndexes($pdo);
+snzEnsureDeviceColumns($pdo);
+
+// অ্যাপ যে ফোন থেকে লগইন করছে
+$deviceId = substr(preg_replace('/[^A-Za-z0-9_.:-]/', '', (string) ($data['device_id'] ?? '')), 0, 100);
+$deviceName = trim(mb_substr(strip_tags((string) ($data['device_name'] ?? '')), 0, 150));
 
 // ইনডেক্স ব্যবহার করে দ্রুত সার্চ; একই key এর একাধিক row থাকলে সবচেয়ে বেশি মেয়াদিটা
-$stmt = $pdo->prepare("SELECT plan_name, expires_at FROM user_keys WHERE license_key = ? AND status = 'active' ORDER BY expires_at DESC LIMIT 1");
+$stmt = $pdo->prepare("SELECT id, plan_name, expires_at, device_id, device_name FROM user_keys WHERE license_key = ? AND status = 'active' ORDER BY expires_at DESC LIMIT 1");
 $stmt->execute([$key]);
 $keyRow = $stmt->fetch();
 
@@ -139,6 +163,32 @@ if (!$keyRow) {
 $expireTime = strtotime($keyRow['expires_at']);
 if ($expireTime === false || $expireTime < time()) {
     jsonResponse(403, ["status" => "error", "message" => "Key has expired."]);
+}
+
+// ---------------------------------------------------------------------
+// 📱 এক কী = এক ফোন
+//  - প্রথমবার যে ফোনে লগইন হবে, কী সেই ফোনে লক হয়ে যাবে
+//  - অন্য ফোনে লগইন করতে চাইলে আটকে যাবে (অ্যাডমিন "Reset Device" করলে আবার নতুন ফোনে লগইন করা যাবে)
+// ---------------------------------------------------------------------
+if ($deviceId !== '') {
+    $boundId = (string) ($keyRow['device_id'] ?? '');
+    if ($boundId === '') {
+        $pdo->prepare("UPDATE user_keys SET device_id = ?, device_name = ?, device_bound_at = NOW(), last_seen_at = NOW() WHERE id = ?")
+            ->execute([$deviceId, $deviceName !== '' ? $deviceName : 'Android Phone', $keyRow['id']]);
+    } elseif (!hash_equals($boundId, $deviceId)) {
+        $who = $keyRow['device_name'] ?: 'another phone';
+        jsonResponse(403, [
+            "status" => "error",
+            "message" => "This key is already connected to " . $who . ". One key works on one phone only. Ask admin to reset the device.",
+            "reason" => "device_locked",
+        ]);
+    } else {
+        if ($deviceName !== '' && $deviceName !== (string) $keyRow['device_name']) {
+            $pdo->prepare("UPDATE user_keys SET device_name = ?, last_seen_at = NOW() WHERE id = ?")->execute([$deviceName, $keyRow['id']]);
+        } else {
+            $pdo->prepare("UPDATE user_keys SET last_seen_at = NOW() WHERE id = ?")->execute([$keyRow['id']]);
+        }
+    }
 }
 
 jsonResponse(200, [

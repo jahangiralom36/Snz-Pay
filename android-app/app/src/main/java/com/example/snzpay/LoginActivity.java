@@ -105,6 +105,7 @@ public class LoginActivity extends Activity {
                 JSONObject req = new JSONObject();
                 req.put("license_key", key);
                 req.put("device_id", deviceId);
+                req.put("device_name", deviceName());   // ওয়েবসাইটে কোন ফোনে কানেক্ট আছে দেখাবে
 
                 AppConfig.HttpResult res = AppConfig.httpPostJson(AppConfig.VERIFY_KEY_URL, req, 10000);
                 if (res.code == 200) {
@@ -138,6 +139,15 @@ public class LoginActivity extends Activity {
         }).start();
     }
 
+    /** যেমন "Samsung SM-A515F" */
+    private static String deviceName() {
+        String brand = android.os.Build.MANUFACTURER == null ? "" : android.os.Build.MANUFACTURER.trim();
+        String model = android.os.Build.MODEL == null ? "" : android.os.Build.MODEL.trim();
+        if (!brand.isEmpty()) brand = brand.substring(0, 1).toUpperCase() + brand.substring(1);
+        if (model.toLowerCase().startsWith(brand.toLowerCase())) return model;
+        return (brand + " " + model).trim();
+    }
+
     private void resetButton() {
         btnLogin.setEnabled(true);
         btnLogin.setText("VERIFY & ACTIVATE");
@@ -146,6 +156,16 @@ public class LoginActivity extends Activity {
     private void showThreeSecondPopup(String title, String message) {
         if (isFinishing()) return;
         boolean network = title.toUpperCase().contains("SERVER");
+        if (message != null && message.contains("connected to")) {
+            new PremiumDialog(this)
+                    .icon("📱", PremiumDialog.AMBER)
+                    .badge("KEY LOCKED TO ANOTHER PHONE")
+                    .title("Key already in use")
+                    .message(message)
+                    .primary("OK", null)
+                    .show();
+            return;
+        }
         boolean needKey = title.toUpperCase().contains("REQUIRED");
         final PremiumDialog d = new PremiumDialog(this)
                 .icon(network ? "📡" : needKey ? "🔑" : "⛔", needKey ? PremiumDialog.AMBER : PremiumDialog.RED)
