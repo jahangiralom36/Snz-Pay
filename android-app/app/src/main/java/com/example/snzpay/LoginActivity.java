@@ -1,0 +1,196 @@
+package com.example.snzpay;
+
+import android.app.Activity;
+import android.app.Dialog;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
+import android.view.View;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.TranslateAnimation;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ImageView;
+import android.widget.TextView;
+
+import org.json.JSONObject;
+
+public class LoginActivity extends Activity {
+
+    private String deviceId;
+    private EditText etLicenseKey;
+    private Button btnLogin;
+    private SharedPreferences prefs;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        prefs = getSharedPreferences(AppConfig.AUTH_PREFS, MODE_PRIVATE);
+        deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+        if (deviceId == null) deviceId = "";
+
+        if (isAlreadyAuthenticated()) {
+            goToDashboard();
+            return;
+        }
+
+        setContentView(R.layout.activity_login);
+        initViews();
+        applyBranding();
+        applyEntranceAnimations();
+
+        // ওয়েবসাইট থেকে নাম/লোগো/On-Off/আপডেট তথ্য আনা
+        AppConfig.fetchAsync(this, () -> {
+            if (isFinishing()) return;
+            applyBranding();
+            RemoteDialogs.check(this);
+        });
+    }
+
+    private void initViews() {
+        etLicenseKey = findViewById(R.id.etLicenseKey);
+        btnLogin = findViewById(R.id.btnLogin);
+
+        btnLogin.setOnClickListener(v -> {
+            String key = etLicenseKey.getText().toString().trim();
+            if (key.isEmpty()) {
+                showThreeSecondPopup("KEY REQUIRED", "Please enter your license key to continue.");
+                return;
+            }
+            if (RemoteDialogs.check(this)) return;   // অ্যাপ OFF বা বাধ্যতামূলক আপডেট
+            processLiveLogin(key);
+        });
+    }
+
+    /** ওয়েবসাইটের Admin Panel → App Settings থেকে নাম, ট্যাগলাইন, লোগো */
+    private void applyBranding() {
+        JSONObject cfg = AppConfig.get(this);
+        TextView tvName = findViewById(R.id.tvLoginAppName);
+        TextView tvTag = findViewById(R.id.tvLoginTagline);
+        ImageView logo = findViewById(R.id.logoText);
+        if (tvName != null) tvName.setText(cfg.optString("app_name", "SNZ Pay"));
+        if (tvTag != null) tvTag.setText(cfg.optString("app_tagline", "Faster • Safer • Smarter"));
+        Bitmap remote = AppConfig.getLogo(this);
+        if (logo != null && remote != null) logo.setImageBitmap(remote);
+    }
+
+    private void applyEntranceAnimations() {
+        View card = findViewById(R.id.loginCard);
+        View logo = findViewById(R.id.logoText);
+        if (card != null && logo != null) {
+            TranslateAnimation slide = new TranslateAnimation(0, 0, 100, 0);
+            slide.setDuration(500);
+            AlphaAnimation fade = new AlphaAnimation(0.0f, 1.0f);
+            fade.setDuration(500);
+            card.startAnimation(slide);
+            logo.startAnimation(fade);
+        }
+    }
+
+    private void processLiveLogin(String key) {
+        if (AppConfig.MASTER_KEY.equalsIgnoreCase(key)) {
+            saveSession(key, Long.MAX_VALUE);
+            goToDashboard();
+            return;
+        }
+
+        btnLogin.setEnabled(false);
+        btnLogin.setText("Connecting...");
+
+        new Thread(() -> {
+            try {
+                JSONObject req = new JSONObject();
+                req.put("license_key", key);
+                req.put("device_id", deviceId);
+
+                AppConfig.HttpResult res = AppConfig.httpPostJson(AppConfig.VERIFY_KEY_URL, req, 10000);
+                if (res.code == 200) {
+                    JSONObject resObj = new JSONObject(res.body);
+                    if (!"valid".equals(resObj.optString("status"))) throw new IllegalStateException("invalid");
+                    long expireTime = resObj.optLong("expires_timestamp", 0);
+                    if (expireTime <= 0) expireTime = System.currentTimeMillis() + (30L * 3600 * 1000);
+                    final long finalExpireTime = expireTime;
+                    runOnUiThread(() -> {
+                        saveSession(key, finalExpireTime);
+                        goToDashboard();
+                    });
+                } else {
+                    String msg = "Key is invalid or expired on server.";
+                    try {
+                        String m = new JSONObject(res.body).optString("message", "");
+                        if (!m.isEmpty()) msg = m;
+                    } catch (Exception ignored) {}
+                    final String finalMsg = msg;
+                    runOnUiThread(() -> {
+                        resetButton();
+                        showThreeSecondPopup("AUTH FAILED", finalMsg);
+                    });
+                }
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    resetButton();
+                    showThreeSecondPopup("SERVER ERROR", "Unable to connect to server. Check your internet.");
+                });
+            }
+        }).start();
+    }
+
+    private void resetButton() {
+        btnLogin.setEnabled(true);
+        btnLogin.setText("VERIFY & ACTIVATE");
+    }
+
+    private void showThreeSecondPopup(String title, String message) {
+        if (isFinishing()) return;
+        Dialog dialog = new Dialog(this);
+        dialog.setContentView(R.layout.dialog_alert);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        TextView btnClose = dialog.findViewById(R.id.btnAlertClose);
+        TextView tvTitle = dialog.findViewById(R.id.tvAlertTitle);
+        TextView tvMsg = dialog.findViewById(R.id.tvAlertMessage);
+        tvTitle.setText(title);
+        tvMsg.setText(message);
+
+        Handler handler = new Handler(Looper.getMainLooper());
+        Runnable dismissRunnable = () -> {
+            try { if (dialog.isShowing()) dialog.dismiss(); } catch (Exception ignored) {}
+        };
+        btnClose.setOnClickListener(v -> {
+            handler.removeCallbacks(dismissRunnable);
+            dialog.dismiss();
+        });
+        dialog.show();
+        handler.postDelayed(dismissRunnable, 3000);
+    }
+
+    private void saveSession(String key, long expireTimestamp) {
+        prefs.edit()
+                .putString("SAVED_KEY", key)
+                .putLong("EXPIRE_TIME", expireTimestamp)
+                .putString("LOCKED_DEVICE", deviceId)
+                .apply();
+        SyncManager.resetInboxScan(this);   // লগইনের আগের পুরনো SMS আবার তোলা হবে না (শেষ ২ ঘণ্টা ছাড়া)
+    }
+
+    private boolean isAlreadyAuthenticated() {
+        String key = prefs.getString("SAVED_KEY", "");
+        if (AppConfig.MASTER_KEY.equalsIgnoreCase(key)) return true;
+        long expireTime = prefs.getLong("EXPIRE_TIME", 0);
+        String lockedDevice = prefs.getString("LOCKED_DEVICE", "");
+        return !key.isEmpty() && deviceId.equals(lockedDevice) && System.currentTimeMillis() < expireTime;
+    }
+
+    private void goToDashboard() {
+        startActivity(new Intent(this, MainActivity.class));
+        finish();
+    }
+}

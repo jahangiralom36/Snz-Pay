@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="320dp"
+    android:layout_height="wrap_content"
+    android:layout_gravity="center"
+    android:orientation="vertical"
+    android:background="@drawable/bg_card_blue"
+    android:padding="20dp">
+
+    <!-- Top Bar with Left [X] Close Button -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- Left [X] Close Button -->
+        <TextView
+            android:id="@+id/btnAlertClose"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:gravity="center"
+            android:background="@drawable/bg_circle_close"
+            android:text="✕"
+            android:textColor="#64748B"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvAlertBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:background="#FEE2E2"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="4dp"
+            android:text="ALERT"
+            android:textColor="#DC2626"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvAlertTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="Verification Failed"
+        android:textColor="#0F172A"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvAlertMessage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="The key you entered is incorrect or expired."
+        android:textColor="#64748B"
+        android:textSize="13sp" />
+
+</LinearLayout>

@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_card_blue"
+    android:padding="24dp">
+
+    <TextView
+        android:id="@+id/tvDialogTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="SNZ Pay Controller"
+        android:textColor="#0F172A"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="Gateway &amp; Security Overview"
+        android:textColor="#0284C7"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginVertical="16dp"
+        android:background="#BAE6FD" />
+
+    <!-- Item 1: Validity -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="LICENSE VALIDITY"
+        android:textColor="#64748B"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvDialogValidity"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:text="VIP Lifetime Active"
+        android:textColor="#0284C7"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <!-- Item 2: Security -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="DEVICE SECURITY"
+        android:textColor="#64748B"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:text="Locked &amp; Encrypted"
+        android:textColor="#16A34A"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <!-- Item 3: Gateway Status -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="GATEWAY SERVICE"
+        android:textColor="#64748B"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:text="24/7 Live Active"
+        android:textColor="#0F172A"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <!-- Item 4: Upload status -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:text="SMS UPLOAD"
+        android:textColor="#64748B"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvDialogSync"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:text="All SMS uploaded ✓"
+        android:textColor="#16A34A"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/btnDialogSyncNow"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_marginTop="18dp"
+        android:background="@drawable/bg_btn_primary"
+        android:text="SYNC NOW"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <!-- Action Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnDialogLogout"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:backgroundTint="#EF4444"
+            android:text="LOGOUT KEY"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnDialogClose"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_btn_primary"
+            android:text="DISMISS"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</LinearLayout>

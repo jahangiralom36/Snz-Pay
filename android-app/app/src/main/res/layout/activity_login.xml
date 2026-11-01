@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/login_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:background="#FFFFFF"
+    android:padding="28dp">
+
+    <!-- ফিক্সড: login_logo ব্যবহার করা হয়েছে -->
+    <ImageView
+        android:id="@+id/logoText"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:adjustViewBounds="true"
+        android:scaleType="fitCenter"
+        android:src="@drawable/login_logo" />
+
+    <TextView
+        android:id="@+id/tvLoginAppName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="SNZ Pay"
+        android:textColor="#0F172A"
+        android:textSize="26sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvLoginTagline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Faster • Safer • Smarter"
+        android:textColor="#0284C7"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <!-- Card Container -->
+    <LinearLayout
+        android:id="@+id/loginCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:background="@drawable/bg_card_blue"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ENTER ACTIVATION KEY"
+            android:textColor="#475569"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/etLicenseKey"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:background="#FFFFFF"
+            android:hint="Paste your key here"
+            android:textColor="#0F172A"
+            android:textColorHint="#94A3B8"
+            android:paddingHorizontal="14dp"
+            android:singleLine="true"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btnLogin"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/bg_btn_primary"
+            android:text="VERIFY &amp; ACTIVATE"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+</LinearLayout>

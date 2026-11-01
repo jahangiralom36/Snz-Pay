@@ -182,8 +182,16 @@ try {
         jsonResponse(200, ["status" => "already_exists", "message" => "TrxID already exists in SQL.", "trx_id" => $trxId]);
     }
 
-    $stmt = $pdo->prepare("INSERT INTO payments (trx_id, amount, method, sender, raw_sms, origin, user_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW())");
-    $stmt->execute([$trxId, $amount, $method, $sender, $rawMsg, $origin, $ownerUserId]);
+    // নেট বন্ধ থাকায় অ্যাপ পরে SMS পাঠালে — আসল SMS আসার সময়টাই রাখা হয় (৭ দিনের মধ্যে হলে)
+    $smsTimeMs = (float) ($data['sms_time'] ?? 0);
+    $nowMs = microtime(true) * 1000;
+    if ($smsTimeMs > $nowMs - 7 * 86400000 && $smsTimeMs < $nowMs + 300000) {
+        $stmt = $pdo->prepare("INSERT INTO payments (trx_id, amount, method, sender, raw_sms, origin, user_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', FROM_UNIXTIME(?))");
+        $stmt->execute([$trxId, $amount, $method, $sender, $rawMsg, $origin, $ownerUserId, (int) floor($smsTimeMs / 1000)]);
+    } else {
+        $stmt = $pdo->prepare("INSERT INTO payments (trx_id, amount, method, sender, raw_sms, origin, user_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW())");
+        $stmt->execute([$trxId, $amount, $method, $sender, $rawMsg, $origin, $ownerUserId]);
+    }
 
     jsonResponse(200, [
         "status"  => "success",
