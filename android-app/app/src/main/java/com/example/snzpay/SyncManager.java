@@ -192,6 +192,11 @@ public final class SyncManager {
         long now = System.currentTimeMillis();
         // প্রথমবার: শেষ ২ ঘণ্টা; সর্বোচ্চ ৩ দিন পিছনে যাবে
         long last = prefs.getLong("last_inbox_scan", now - 2L * 3600 * 1000);
+        // নতুন ভার্সনে একবার: শেষ ৩ দিনের SMS নতুন নিয়মে আবার পড়া (পুরনো ভুলভাবে সেভ হওয়াগুলো ঠিকভাবে ফিরে আসবে)
+        if (!prefs.getBoolean("rescan_v3_done", false)) {
+            last = now - 3L * 24 * 3600 * 1000;
+            prefs.edit().putBoolean("rescan_v3_done", true).apply();
+        }
         last = Math.max(last, now - 3L * 24 * 3600 * 1000);
 
         long maxSeen = last;

@@ -1,12 +1,9 @@
 package com.example.snzpay;
 
 import android.app.Activity;
-import android.app.Dialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
-import android.graphics.Color;
-import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -148,28 +145,17 @@ public class LoginActivity extends Activity {
 
     private void showThreeSecondPopup(String title, String message) {
         if (isFinishing()) return;
-        Dialog dialog = new Dialog(this);
-        dialog.setContentView(R.layout.dialog_alert);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
-
-        TextView btnClose = dialog.findViewById(R.id.btnAlertClose);
-        TextView tvTitle = dialog.findViewById(R.id.tvAlertTitle);
-        TextView tvMsg = dialog.findViewById(R.id.tvAlertMessage);
-        tvTitle.setText(title);
-        tvMsg.setText(message);
-
-        Handler handler = new Handler(Looper.getMainLooper());
-        Runnable dismissRunnable = () -> {
-            try { if (dialog.isShowing()) dialog.dismiss(); } catch (Exception ignored) {}
-        };
-        btnClose.setOnClickListener(v -> {
-            handler.removeCallbacks(dismissRunnable);
-            dialog.dismiss();
-        });
-        dialog.show();
-        handler.postDelayed(dismissRunnable, 3000);
+        boolean network = title.toUpperCase().contains("SERVER");
+        boolean needKey = title.toUpperCase().contains("REQUIRED");
+        final PremiumDialog d = new PremiumDialog(this)
+                .icon(network ? "📡" : needKey ? "🔑" : "⛔", needKey ? PremiumDialog.AMBER : PremiumDialog.RED)
+                .badge(title)
+                .title(needKey ? "License key needed" : network ? "Connection problem" : "Verification failed")
+                .message(message)
+                .primary("OK", null)
+                .show();
+        // ৪ সেকেন্ড পর নিজে থেকেই বন্ধ
+        new Handler(Looper.getMainLooper()).postDelayed(d::dismiss, 4000);
     }
 
     private void saveSession(String key, long expireTimestamp) {

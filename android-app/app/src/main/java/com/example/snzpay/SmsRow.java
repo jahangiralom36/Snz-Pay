@@ -1,7 +1,6 @@
 package com.example.snzpay;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -30,7 +29,7 @@ public final class SmsRow {
         String m = t.method == null ? "" : t.method.toUpperCase(Locale.ROOT);
         method.setText(shortName(m));
         GradientDrawable badge = new GradientDrawable();
-        badge.setCornerRadius(dp(a, 8));
+        badge.setCornerRadius(dp(a, 10));
         badge.setColor(methodColor(m));
         method.setBackground(badge);
 
@@ -55,31 +54,41 @@ public final class SmsRow {
             status.setTextColor(Color.parseColor("#D97706"));
         }
 
-        row.setOnClickListener(v -> showDetails(a, t));
+        View card = row.findViewById(R.id.rowCard);
+        (card != null ? card : row).setOnClickListener(v -> showDetails(a, t));
     }
 
     private static void showDetails(final Activity a, final DatabaseHelper.Tx t) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Method: ").append(t.method).append('\n');
-        sb.append("TrxID: ").append(t.trxId).append('\n');
-        sb.append("Amount: ").append(String.format(Locale.US, "%.2f", t.amount)).append('\n');
-        if (t.customer != null && !t.customer.isEmpty()) sb.append("Sender: ").append(t.customer).append('\n');
-        sb.append("Time: ").append(new SimpleDateFormat("dd MMM yyyy, hh:mm:ss a", Locale.US).format(new Date(t.smsTime))).append('\n');
-        sb.append("Status: ").append(t.status).append('\n');
-        if (!DatabaseHelper.ST_SYNCED.equals(t.status) && t.lastError != null && !t.lastError.isEmpty()) {
-            sb.append("Last error: ").append(t.lastError).append('\n');
-        }
-        if (t.rawSms != null && !t.rawSms.isEmpty()) sb.append("\nSMS:\n").append(t.rawSms);
+        String m = t.method == null ? "" : t.method.toUpperCase(Locale.ROOT);
+        boolean usdt = m.contains("BINANCE");
+        String amountText = usdt ? String.format(Locale.US, "$ %.2f USDT", t.amount) : String.format(Locale.US, "৳ %.2f", t.amount);
 
-        new AlertDialog.Builder(a)
-                .setTitle("Transaction Details")
-                .setMessage(sb.toString())
-                .setPositiveButton("COPY TRXID", (d, w) -> {
+        StringBuilder info = new StringBuilder();
+        info.append("TrxID   : ").append(t.trxId).append('\n');
+        if (t.customer != null && !t.customer.isEmpty()) info.append("Sender  : ").append(t.customer).append('\n');
+        info.append("Time    : ").append(new SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(new Date(t.smsTime))).append('\n');
+        if (!DatabaseHelper.ST_SYNCED.equals(t.status) && t.lastError != null && !t.lastError.isEmpty()) {
+            info.append("Error   : ").append(t.lastError).append('\n');
+        }
+        if (t.rawSms != null && !t.rawSms.isEmpty()) info.append("\n").append(t.rawSms.trim());
+
+        String icon; int color; String badge;
+        if (DatabaseHelper.ST_SYNCED.equals(t.status)) { icon = "✅"; color = PremiumDialog.GREEN; badge = "UPLOADED TO SERVER"; }
+        else if (DatabaseHelper.ST_REJECTED.equals(t.status)) { icon = "⛔"; color = PremiumDialog.RED; badge = "REJECTED"; }
+        else { icon = "⏳"; color = PremiumDialog.AMBER; badge = "WAITING TO UPLOAD"; }
+
+        new PremiumDialog(a)
+                .icon(icon, color)
+                .badge(badge)
+                .title(amountText)
+                .message(shortName(m) + " payment")
+                .info(info.toString())
+                .primary("COPY TRXID", d -> {
                     ClipboardManager cm = (ClipboardManager) a.getSystemService(Context.CLIPBOARD_SERVICE);
                     if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("TrxID", t.trxId));
                     Toast.makeText(a, "Copied: " + t.trxId, Toast.LENGTH_SHORT).show();
                 })
-                .setNegativeButton("CLOSE", null)
+                .secondary("CLOSE", null)
                 .show();
     }
 

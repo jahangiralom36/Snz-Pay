@@ -11,7 +11,6 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -22,7 +21,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.Animation;
 import android.view.animation.ScaleAnimation;
-import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -138,15 +136,24 @@ public class MainActivity extends Activity {
 
     private void showSettingsMenuDialog() {
         Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         dialog.setContentView(R.layout.dialog_settings);
 
         TextView tvValidity = dialog.findViewById(R.id.tvDialogValidity);
         TextView tvTitle = dialog.findViewById(R.id.tvDialogTitle);
         TextView tvSync = dialog.findViewById(R.id.tvDialogSync);
-        Button btnLogout = dialog.findViewById(R.id.btnDialogLogout);
-        Button btnClose = dialog.findViewById(R.id.btnDialogClose);
-        Button btnSyncNow = dialog.findViewById(R.id.btnDialogSyncNow);
-        Button btnHistory = dialog.findViewById(R.id.btnDialogHistory);
+        TextView btnLogout = dialog.findViewById(R.id.btnDialogLogout);
+        TextView btnClose = dialog.findViewById(R.id.btnDialogClose);
+        TextView btnSyncNow = dialog.findViewById(R.id.btnDialogSyncNow);
+        TextView btnHistory = dialog.findViewById(R.id.btnDialogHistory);
+        TextView tvIcon = dialog.findViewById(R.id.tvDialogIcon);
+        if (tvIcon != null) {
+            android.graphics.drawable.GradientDrawable circle = new android.graphics.drawable.GradientDrawable();
+            circle.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            circle.setColor(Color.parseColor("#2E00D9FF"));
+            circle.setStroke(SmsRow.dp(this, 2), Color.parseColor("#9900D9FF"));
+            tvIcon.setBackground(circle);
+        }
         if (btnHistory != null) btnHistory.setOnClickListener(v -> {
             dialog.dismiss();
             openHistory();
@@ -177,7 +184,7 @@ public class MainActivity extends Activity {
         if (tvSync != null) {
             int waiting = dbHelper.getUnsyncedCount();
             tvSync.setText(waiting == 0 ? "All SMS uploaded ✓" : waiting + " SMS waiting to upload");
-            tvSync.setTextColor(waiting == 0 ? Color.parseColor("#16A34A") : Color.parseColor("#D97706"));
+            tvSync.setTextColor(waiting == 0 ? Color.parseColor("#00D89A") : Color.parseColor("#FBBF24"));
         }
 
         if (btnSyncNow != null) {
@@ -201,16 +208,19 @@ public class MainActivity extends Activity {
 
         btnLogout.setOnClickListener(v -> {
             dialog.dismiss();
-            performLogout();
+            new PremiumDialog(this)
+                    .icon("🔑", PremiumDialog.RED)
+                    .badge("LOGOUT")
+                    .title("Logout this key?")
+                    .message("The gateway will stop on this phone until you login again.")
+                    .primary("YES, LOGOUT", d -> performLogout())
+                    .secondary("CANCEL", null)
+                    .show();
         });
         btnClose.setOnClickListener(v -> dialog.dismiss());
         dialog.show();
-
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            int dialogWidth = (int) (getResources().getDisplayMetrics().widthPixels * 0.90);
-            dialog.getWindow().setLayout(dialogWidth, -2);
-        }
+        PremiumDialog.styleWindow(this, dialog, 0.90f);          // পেছনে blur + অন্ধকার
+        PremiumDialog.animateIn(dialog.findViewById(R.id.settingsCard));
     }
 
     private void loadDashboardData() {
@@ -255,11 +265,6 @@ public class MainActivity extends Activity {
             View row = inf.inflate(R.layout.item_sms, listToday, false);
             SmsRow.bind(this, row, today.get(i), false);
             listToday.addView(row);
-            if (i < today.size() - 1) {
-                View line = new View(this);
-                line.setBackgroundColor(Color.parseColor("#E2E8F0"));
-                listToday.addView(line, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
-            }
         }
         if (tvTodayEmpty != null) tvTodayEmpty.setVisibility(today.isEmpty() ? View.VISIBLE : View.GONE);
         if (tvTodayCount != null) tvTodayCount.setText(dbHelper.getTodayCount() + " SMS");

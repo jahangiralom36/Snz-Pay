@@ -1,10 +1,8 @@
 package com.example.snzpay;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
-import android.widget.Button;
 import android.widget.Toast;
 
 import org.json.JSONObject;
@@ -12,13 +10,14 @@ import org.json.JSONObject;
 import java.lang.ref.WeakReference;
 
 /**
- * ওয়েবসাইট থেকে নিয়ন্ত্রিত পপআপ:
+ * ওয়েবসাইট থেকে নিয়ন্ত্রিত প্রিমিয়াম পপআপ:
  *  - অ্যাপ OFF (মেইনটেন্যান্স)
  *  - নতুন ভার্সন এসেছে → আপডেট (বাধ্যতামূলক বা ঐচ্ছিক)
  */
 public final class RemoteDialogs {
 
-    private static WeakReference<AlertDialog> current;
+    private static WeakReference<PremiumDialog> current;
+    private static String currentKind = "";
     private static int optionalShownFor = -1;   // ঐচ্ছিক আপডেট প্রতিবার না দেখিয়ে একবার
 
     private RemoteDialogs() {}
@@ -28,47 +27,54 @@ public final class RemoteDialogs {
         if (a == null || a.isFinishing()) return false;
         JSONObject cfg = AppConfig.get(a);
 
+        // ---------------- মেইনটেন্যান্স ----------------
         if (!cfg.optBoolean("app_enabled", true)) {
+            if (isShowing("off")) return true;
             String msg = cfg.optString("disabled_message", "");
             if (msg.isEmpty()) msg = "Service is temporarily unavailable. Please try again later.";
-            show(a, new AlertDialog.Builder(a)
-                    .setTitle("Service Paused")
-                    .setMessage(msg + "\n\nYour payment SMS are safely saved on this phone and will be sent automatically.")
-                    .setCancelable(false)
-                    .setPositiveButton("CLOSE APP", (d, w) -> a.finishAffinity()), null);
+            show("off", new PremiumDialog(a)
+                    .icon("🛠", PremiumDialog.AMBER)
+                    .badge("UNDER MAINTENANCE")
+                    .title("We'll be back soon")
+                    .message(msg)
+                    .info("✓  Your payment SMS are safely saved on this phone\n✓  They will be sent automatically when service is back")
+                    .primary("CLOSE APP", d -> a.finishAffinity())
+                    .secondary("TRY AGAIN", d -> AppConfig.fetchAsync(a, () -> check(a)))
+                    .cancelable(false));
             return true;
         }
 
+        // ---------------- আপডেট ----------------
         int latest = cfg.optInt("latest_version_code", 0);
         int mine = AppConfig.currentVersionCode(a);
         if (latest > 0 && latest > mine) {
             final boolean force = cfg.optBoolean("force_update", false);
+            if (isShowing("update")) return force;
             if (!force && optionalShownFor == latest) return false;
             optionalShownFor = latest;
 
-            final String url = cfg.optString("apk_url", AppConfig.BASE_URL + "/app-release.apk");
+            final String url = cfg.optString("apk_url", "").isEmpty()
+                    ? AppConfig.BASE_URL + "/app-release.apk" : cfg.optString("apk_url");
             String name = cfg.optString("latest_version_name", "");
             String msg = cfg.optString("update_message", "");
-            if (msg.isEmpty()) msg = "A new version of the app is available. Please update now.";
+            if (msg.isEmpty()) msg = "A new version of the app is available with improvements and fixes.";
 
-            AlertDialog.Builder b = new AlertDialog.Builder(a)
-                    .setTitle(name.isEmpty() ? "Update Available" : "Update Available (v" + name + ")")
-                    .setMessage(msg)
-                    .setCancelable(!force)
-                    .setPositiveButton("UPDATE NOW", null);
-            if (!force) b.setNegativeButton("LATER", null);
-
-            show(a, b, dialog -> {
-                Button btn = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-                if (btn != null) btn.setOnClickListener(v -> {
-                    try {
-                        a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-                    } catch (Exception e) {
-                        Toast.makeText(a, "Open this link in browser: " + url, Toast.LENGTH_LONG).show();
-                    }
-                    if (!force) dialog.dismiss();   // বাধ্যতামূলক হলে ডায়ালগ থেকেই যাবে
-                });
-            });
+            PremiumDialog d = new PremiumDialog(a)
+                    .icon("🚀", PremiumDialog.CYAN)
+                    .badge(force ? "REQUIRED UPDATE" : "NEW UPDATE")
+                    .title(name.isEmpty() ? "Update Available" : "Version " + name + " is here")
+                    .message(msg)
+                    .primary("UPDATE NOW", x -> {
+                        try {
+                            a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                        } catch (Exception e) {
+                            Toast.makeText(a, "Open this link in browser: " + url, Toast.LENGTH_LONG).show();
+                        }
+                    })
+                    .keepOpenOnPrimary(force)       // বাধ্যতামূলক হলে পপআপ থেকে যাবে
+                    .cancelable(!force);
+            if (!force) d.secondary("LATER", null);
+            show("update", d);
             return force;
         }
 
@@ -76,23 +82,22 @@ public final class RemoteDialogs {
         return false;
     }
 
-    private interface OnShown { void run(AlertDialog d); }
+    private static boolean isShowing(String kind) {
+        PremiumDialog d = current == null ? null : current.get();
+        return d != null && d.isShowing() && kind.equals(currentKind);
+    }
 
-    private static void show(Activity a, AlertDialog.Builder b, OnShown onShown) {
+    private static void show(String kind, PremiumDialog d) {
         dismissCurrent();
-        try {
-            AlertDialog d = b.create();
-            d.show();
-            current = new WeakReference<>(d);
-            if (onShown != null) onShown.run(d);
-        } catch (Exception ignored) {}
+        d.show();
+        current = new WeakReference<>(d);
+        currentKind = kind;
     }
 
     private static void dismissCurrent() {
-        AlertDialog d = current == null ? null : current.get();
-        if (d != null && d.isShowing()) {
-            try { d.dismiss(); } catch (Exception ignored) {}
-        }
+        PremiumDialog d = current == null ? null : current.get();
+        if (d != null) d.dismiss();
         current = null;
+        currentKind = "";
     }
 }

@@ -23,7 +23,7 @@ import java.util.Locale;
 public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "snz_pay.db";
-    private static final int DATABASE_VERSION = 2;
+    private static final int DATABASE_VERSION = 3;
 
     public static final String ST_PENDING = "Pending";
     public static final String ST_SYNCED = "Synced";
@@ -74,6 +74,31 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             safeExec(db, "UPDATE transactions SET status='" + ST_REJECTED + "' WHERE trx_id IS NULL OR trx_id=''");
             safeExec(db, "UPDATE transactions SET status='" + ST_PENDING + "' WHERE status NOT IN ('" + ST_REJECTED + "')");
         }
+        if (oldVersion < 3) cleanupOldData(db);
+    }
+
+    /**
+     * পুরনো অ্যাপের রেখে যাওয়া ভাঙা লাইন পরিষ্কার:
+     *  - TrxID নেই বা টাকা ০ (যেমন Rocket এর "debited" SMS) → মুছে ফেলা
+     *  - সময় নেই (1970 দেখাত) → তারিখ থেকে সময় বসানো
+     *  - Rocket TrxID এর শেষে "Date" লেগে থাকলে (7100950328Date) → ঠিক করা
+     */
+    private static void cleanupOldData(SQLiteDatabase db) {
+        safeExec(db, "DELETE FROM transactions WHERE trx_id IS NULL OR trx_id='' OR amount IS NULL OR amount<=0");
+        safeExec(db, "UPDATE transactions SET sms_time = CAST(strftime('%s', date) AS INTEGER) * 1000 " +
+                "WHERE (sms_time IS NULL OR sms_time = 0) AND date IS NOT NULL AND date != ''");
+        try (Cursor c = db.rawQuery("SELECT id, trx_id FROM transactions WHERE method='ROCKET'", null)) {
+            while (c.moveToNext()) {
+                String trx = c.getString(1);
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(\\d{6,})[A-Za-z]+$").matcher(trx == null ? "" : trx);
+                if (m.find()) {
+                    ContentValues cv = new ContentValues();
+                    cv.put("trx_id", m.group(1));
+                    cv.put("status", ST_PENDING);
+                    db.update("transactions", cv, "id=?", new String[]{String.valueOf(c.getLong(0))});
+                }
+            }
+        } catch (Exception ignored) {}
     }
 
     private static void safeExec(SQLiteDatabase db, String sql) {

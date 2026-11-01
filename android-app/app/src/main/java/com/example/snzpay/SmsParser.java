@@ -165,13 +165,16 @@ public final class SmsParser {
             r.trxId = extract(body, "(?:TxnID|TrxID)\\s*:?\\s*([A-Za-z0-9]+)");
         }
         // ৬. Rocket (16216)
-        else if ((up.contains("RECEIVED FROM A/C") || up.contains("NEXUSPAY") || (up.contains("TXNID") && up.contains("RECEIVED")))
+        else if (up.contains("RECEIVED") && !up.contains("DEBITED")
+                && (up.contains("FROM A/C") || up.contains("NEXUSPAY") || up.contains("TXNID"))
                 && (snd.contains("16216") || snd.contains("ROCKET") || snd.contains("DBBL") || !strict)) {
             r.method = "ROCKET";
             r.amount = toAmount(extract(body, "Tk\\.?\\s*" + AMOUNT + "\\s*received"));
             if (r.amount <= 0) r.amount = toAmount(extract(body, "Tk\\.?\\s*" + AMOUNT));
             r.customer = extract(body, "A/C\\s*:?\\s*([*0-9]+)");
-            r.trxId = extract(body, "TxnId\\s*:?\\s*([A-Za-z0-9]+)");
+            // Rocket TxnId শুধু সংখ্যা — "TxnId:7100950328Date:01-NOV" থেকে "Date" বাদ
+            r.trxId = extract(body, "TxnId\\s*:?\\s*(\\d{6,})");
+            if (r.trxId.isEmpty()) r.trxId = extract(body, "TxnId\\s*:?\\s*([A-Za-z0-9]+)");
         } else {
             return null;
         }
