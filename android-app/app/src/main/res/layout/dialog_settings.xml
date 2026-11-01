@@ -4,7 +4,6 @@
     android:id="@+id/settingsCard"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/bg_premium_card"
     android:orientation="vertical"
     android:padding="22dp">
 
@@ -53,10 +52,10 @@
 
     <!-- Info box -->
     <LinearLayout
+        android:id="@+id/settingsInfo"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="18dp"
-        android:background="@drawable/bg_premium_inner"
         android:orientation="vertical"
         android:padding="16dp">
 
@@ -112,7 +111,6 @@
         android:layout_width="match_parent"
         android:layout_height="50dp"
         android:layout_marginTop="18dp"
-        android:background="@drawable/bg_premium_btn"
         android:gravity="center"
         android:text="📜  ALL HISTORY"
         android:textColor="#061535"
@@ -124,7 +122,6 @@
         android:layout_width="match_parent"
         android:layout_height="46dp"
         android:layout_marginTop="10dp"
-        android:background="@drawable/bg_premium_btn_outline"
         android:gravity="center"
         android:text="🔄  SYNC NOW"
         android:textColor="#00D9FF"
@@ -143,7 +140,6 @@
             android:layout_height="46dp"
             android:layout_weight="1"
             android:layout_marginEnd="6dp"
-            android:background="@drawable/bg_premium_btn_outline"
             android:gravity="center"
             android:text="LOGOUT KEY"
             android:textColor="#F87171"
@@ -156,7 +152,6 @@
             android:layout_height="46dp"
             android:layout_weight="1"
             android:layout_marginStart="6dp"
-            android:background="@drawable/bg_premium_btn_outline"
             android:gravity="center"
             android:text="CLOSE"
             android:textColor="#CBD5E1"

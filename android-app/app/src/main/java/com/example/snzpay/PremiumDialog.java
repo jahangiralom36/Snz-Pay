@@ -55,6 +55,12 @@ public class PremiumDialog {
         btnPrimary = dialog.findViewById(R.id.btnPmPrimary);
         btnSecondary = dialog.findViewById(R.id.btnPmSecondary);
         tvInfo.setMovementMethod(new ScrollingMovementMethod());
+        // ডিজাইন কোড থেকে (আলাদা drawable ফাইল লাগে না)
+        View card = dialog.findViewById(R.id.pmCard);
+        if (card != null) card.setBackground(Styles.premiumCard(a));
+        tvInfo.setBackground(Styles.premiumInner(a));
+        btnPrimary.setBackground(Styles.premiumButton(a));
+        btnSecondary.setBackground(Styles.premiumOutline(a));
         btnPrimary.setOnClickListener(v -> dismiss());
         icon("⚡", CYAN);
     }

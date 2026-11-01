@@ -55,6 +55,7 @@ public final class SmsRow {
         }
 
         View card = row.findViewById(R.id.rowCard);
+        if (card != null) card.setBackground(Styles.smsRow(a));
         (card != null ? card : row).setOnClickListener(v -> showDetails(a, t));
     }
 

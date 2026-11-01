@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- ওয়েবসাইটের মত ডার্ক নীল কার্ড + হালকা সায়ান বর্ডার (প্রিমিয়াম পপআপ) -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <gradient android:angle="270" android:startColor="#0B2559" android:endColor="#05112B" />
-    <corners android:radius="28dp" />
-    <stroke android:width="1.5dp" android:color="#6600D9FF" />
-</shape>

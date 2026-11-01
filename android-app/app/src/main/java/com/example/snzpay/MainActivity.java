@@ -146,6 +146,14 @@ public class MainActivity extends Activity {
         TextView btnClose = dialog.findViewById(R.id.btnDialogClose);
         TextView btnSyncNow = dialog.findViewById(R.id.btnDialogSyncNow);
         TextView btnHistory = dialog.findViewById(R.id.btnDialogHistory);
+        View settingsCard = dialog.findViewById(R.id.settingsCard);
+        if (settingsCard != null) settingsCard.setBackground(Styles.premiumCard(this));
+        View settingsInfo = dialog.findViewById(R.id.settingsInfo);
+        if (settingsInfo != null) settingsInfo.setBackground(Styles.premiumInner(this));
+        if (btnHistory != null) btnHistory.setBackground(Styles.premiumButton(this));
+        if (btnSyncNow != null) btnSyncNow.setBackground(Styles.premiumOutline(this));
+        if (btnLogout != null) btnLogout.setBackground(Styles.premiumOutline(this));
+        if (btnClose != null) btnClose.setBackground(Styles.premiumOutline(this));
         TextView tvIcon = dialog.findViewById(R.id.tvDialogIcon);
         if (tvIcon != null) {
             android.graphics.drawable.GradientDrawable circle = new android.graphics.drawable.GradientDrawable();
