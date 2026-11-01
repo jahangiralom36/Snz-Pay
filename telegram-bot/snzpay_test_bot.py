@@ -14,13 +14,17 @@ SNZPay Test Bot — Telegram থেকে সাইটের পেমেন্�
   - bKash / Nagad / Rocket → TrxID দিতে হবে
   - Binance               → Order ID দিতে হবে
   - Bangla QR             → যে নাম্বার থেকে টাকা এসেছে তার শেষ ৪ ডিজিট
+ভেরিফাই সফল হলে ওই TrxID তে যত টাকা ছিল, সাথে সাথে ইউজারের বট-ব্যালেন্সে যোগ হয়।
+ব্যালেন্স balances.json ফাইলে সেভ থাকে (বট বন্ধ করে চালালেও হারায় না)।
 
 ⚠️ সফল ভেরিফাই হলে সেই পেমেন্ট সাইটে "used" হয়ে যায় — একই TrxID দ্বিতীয়বার
    আর success হবে না ("Transaction already used" আসবে)। এটাই সঠিক আচরণ।
 """
 
+import json
 import os
 import re
+import threading
 import time
 
 import requests
@@ -49,8 +53,51 @@ METHODS = {
     "BANGLA_QR": {"name": "Bangla QR", "emoji": "🔵", "ask": "last 4 digits", "example": "5678"},
 }
 
-# প্রতিটা ইউজারের বর্তমান ধাপ: {chat_id: {"step": ..., "method": ..., "amount": ...}}
+# প্রতিটা ইউজারের বর্তমান ধাপ: {chat_id: {"step": ..., "method": ...}}
 sessions = {}
+
+# =========================================================================
+# 💰 ইউজারের ব্যালেন্স (balances.json ফাইলে সেভ থাকে)
+# =========================================================================
+BALANCE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "balances.json")
+_bal_lock = threading.Lock()
+
+
+def _load_balances() -> dict:
+    try:
+        with open(BALANCE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def get_balance(user_id) -> float:
+    with _bal_lock:
+        return float(_load_balances().get(str(user_id), {}).get("balance", 0))
+
+
+def add_balance(user_id, amount: float, trx_id: str, method: str) -> float:
+    """টাকা যোগ করে নতুন ব্যালেন্স ফেরত দেয়"""
+    with _bal_lock:
+        data = _load_balances()
+        u = data.setdefault(str(user_id), {"balance": 0, "history": []})
+        u["balance"] = round(float(u.get("balance", 0)) + float(amount), 2)
+        u.setdefault("history", []).append({
+            "trx_id": trx_id, "method": method, "amount": amount,
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+        u["history"] = u["history"][-50:]   # শেষ ৫০টা লেনদেন রাখা
+        tmp = BALANCE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, BALANCE_FILE)
+        return u["balance"]
+
+
+def get_history(user_id, limit=10) -> list:
+    with _bal_lock:
+        return _load_balances().get(str(user_id), {}).get("history", [])[-limit:][::-1]
 
 
 # =========================================================================
@@ -114,6 +161,8 @@ def method_buttons():
             row = []
     if row:
         rows.append(row)
+    rows.append([{"text": "💰 My Balance", "callback_data": "balance"},
+                 {"text": "🧾 History", "callback_data": "history"}])
     return rows
 
 
@@ -124,24 +173,36 @@ def esc(s) -> str:
 # =========================================================================
 # 3) বটের কথোপকথন
 # =========================================================================
-def show_menu(chat_id):
+def show_menu(chat_id, user_id):
     sessions.pop(chat_id, None)
     send(chat_id,
          "👋 <b>SNZPay Test Bot</b>\n\n"
-         "কোন মেথডের পেমেন্ট টেস্ট করবেন? নিচ থেকে বাছাই করুন 👇",
+         f"💰 আপনার ব্যালেন্স: <b>৳ {get_balance(user_id):,.2f}</b>\n\n"
+         "কোন মেথডে টাকা পাঠিয়েছেন? নিচ থেকে বাছাই করুন 👇",
          method_buttons())
 
 
+def show_balance(chat_id, user_id):
+    send(chat_id, f"💰 আপনার বর্তমান ব্যালেন্স: <b>৳ {get_balance(user_id):,.2f}</b>",
+         [[{"text": "➕ Add Money", "callback_data": "menu"}]])
+
+
+def show_history(chat_id, user_id):
+    items = get_history(user_id)
+    if not items:
+        send(chat_id, "🧾 এখনো কোনো লেনদেন নেই।", [[{"text": "🏠 Main menu", "callback_data": "menu"}]])
+        return
+    lines = ["🧾 <b>শেষ লেনদেনগুলো</b>", ""]
+    for h in items:
+        lines.append(f"• {esc(h['method'])} <code>{esc(h['trx_id'])}</code> +৳{h['amount']:,.2f}  <i>{esc(h['time'])}</i>")
+    lines += ["", f"💰 মোট ব্যালেন্স: <b>৳ {get_balance(user_id):,.2f}</b>"]
+    send(chat_id, "\n".join(lines), [[{"text": "🏠 Main menu", "callback_data": "menu"}]])
+
+
 def on_method_selected(chat_id, code):
-    m = METHODS[code]
-    sessions[chat_id] = {"step": "amount", "method": code}
-    unit = "USDT" if code == "BINANCE" else "BDT"
-    send(chat_id,
-         f"{m['emoji']} <b>{m['name']}</b> সিলেক্ট হয়েছে।\n\n"
-         f"💰 কত টাকা ({unit}) পাঠানো হয়েছে লিখুন।\n"
-         f"<i>যেকোনো অ্যামাউন্ট মেনে নিতে Skip চাপুন।</i>",
-         [[{"text": "⏭ Skip (any amount)", "callback_data": "skip_amount"}],
-          [{"text": "⬅️ Back", "callback_data": "menu"}]])
+    # অ্যামাউন্ট জিজ্ঞেস না করে সরাসরি TrxID চাওয়া — যত টাকা এসেছে সার্ভারই বলে দেবে
+    sessions[chat_id] = {"step": "value", "method": code}
+    ask_value(chat_id)
 
 
 def ask_value(chat_id):
@@ -160,21 +221,7 @@ def ask_value(chat_id):
     send(chat_id, text, [[{"text": "⬅️ Back", "callback_data": "menu"}]])
 
 
-def on_amount(chat_id, text):
-    clean = text.replace(",", "").replace("৳", "").replace("$", "").strip()
-    clean = clean.translate(str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789"))
-    try:
-        amount = float(clean)
-        if amount < 0:
-            raise ValueError
-    except ValueError:
-        send(chat_id, "❌ শুধু সংখ্যা লিখুন, যেমন <code>500</code> বা <code>2.5</code>")
-        return
-    sessions[chat_id]["amount"] = amount
-    ask_value(chat_id)
-
-
-def on_value(chat_id, text):
+def on_value(chat_id, user_id, text):
     s = sessions[chat_id]
     code = s["method"]
     value = text.strip().upper().replace(" ", "")
@@ -189,7 +236,7 @@ def on_value(chat_id, text):
         send(chat_id, f"❌ সঠিক {METHODS[code]['ask']} লিখুন (শুধু ইংরেজি অক্ষর ও সংখ্যা)।")
         return
 
-    amount = s.get("amount", 0)
+    amount = 0   # যেকোনো অ্যামাউন্ট — TrxID তে যত টাকা আছে ততই যোগ হবে
     m = METHODS[code]
     send(chat_id, f"⏳ সার্ভারে চেক করা হচ্ছে…\n{m['emoji']} {m['name']} • <code>{esc(value)}</code>")
 
@@ -199,8 +246,15 @@ def on_value(chat_id, text):
 
     if result["ok"]:
         d = result["data"]
+        try:
+            credited = float(d.get("amount") or 0)
+        except (TypeError, ValueError):
+            credited = 0.0
+        new_balance = add_balance(user_id, credited, str(d.get("trx_id", value)), str(d.get("method", code)))
         lines = [
             "✅ <b>Payment Verified!</b>",
+            f"➕ <b>৳ {credited:,.2f}</b> আপনার ব্যালেন্সে যোগ হয়েছে।",
+            f"💰 নতুন ব্যালেন্স: <b>৳ {new_balance:,.2f}</b>",
             "",
             f"🏷 Method: <b>{esc(d.get('method', code))}</b>",
             f"🧾 TrxID: <code>{esc(d.get('trx_id', value))}</code>",
@@ -212,7 +266,8 @@ def on_value(chat_id, text):
             f"📱 Sender: <code>{esc(d.get('sender', 'N/A'))}</code>",
             f"⚡ Response time: {ms} ms",
         ]
-        send(chat_id, "\n".join(lines), [[{"text": "🔁 Test another payment", "callback_data": "menu"}]])
+        send(chat_id, "\n".join(lines), [[{"text": "➕ Add more money", "callback_data": "menu"},
+                                            {"text": "💰 Balance", "callback_data": "balance"}]])
     else:
         send(chat_id,
              "❌ <b>Verification Failed</b>\n\n"
@@ -231,18 +286,23 @@ def handle_update(upd):
     # বাটনে চাপ
     if "callback_query" in upd:
         cq = upd["callback_query"]
-        chat_id = cq["message"]["chat"]["id"]
+        user_id = cq["from"]["id"]
+        # বাটন চাপার পর Telegram এর লোডিং ঘড়ি বন্ধ করা
         tg("answerCallbackQuery", callback_query_id=cq["id"])
-        if not allowed(cq["from"]["id"]):
+        msg = cq.get("message") or {}
+        chat_id = (msg.get("chat") or {}).get("id", user_id)
+        if not allowed(user_id):
             return
         data = cq.get("data", "")
+        print(f"[button] user={user_id} data={data}")
         if data == "menu":
-            show_menu(chat_id)
+            show_menu(chat_id, user_id)
+        elif data == "balance":
+            show_balance(chat_id, user_id)
+        elif data == "history":
+            show_history(chat_id, user_id)
         elif data.startswith("m:") and data[2:] in METHODS:
             on_method_selected(chat_id, data[2:])
-        elif data == "skip_amount" and chat_id in sessions:
-            sessions[chat_id]["amount"] = 0
-            ask_value(chat_id)
         return
 
     # টেক্সট মেসেজ
@@ -250,6 +310,7 @@ def handle_update(upd):
     if not msg or "text" not in msg:
         return
     chat_id = msg["chat"]["id"]
+    user_id = msg["from"]["id"]
     text = msg["text"].strip()
 
     if text.startswith("/id"):
@@ -259,16 +320,17 @@ def handle_update(upd):
         send(chat_id, "⛔ You are not allowed to use this bot.")
         return
     if text.startswith("/start") or text.startswith("/menu") or text.startswith("/cancel"):
-        show_menu(chat_id)
+        show_menu(chat_id, user_id)
+        return
+    if text.startswith("/balance"):
+        show_balance(chat_id, user_id)
         return
 
     s = sessions.get(chat_id)
     if not s:
-        show_menu(chat_id)
-    elif s["step"] == "amount":
-        on_amount(chat_id, text)
+        show_menu(chat_id, user_id)
     elif s["step"] == "value":
-        on_value(chat_id, text)
+        on_value(chat_id, user_id, text)
 
 
 # =========================================================================
@@ -285,9 +347,11 @@ def main():
     if not me.get("ok"):
         print("❌ BOT_TOKEN ভুল:", me)
         return
-    tg("deleteWebhook")  # আগে webhook থাকলে polling কাজ করে না
+    # আগে webhook থাকলে polling কাজ করে না
+    tg("deleteWebhook", drop_pending_updates=False)
     tg("setMyCommands", commands=[
         {"command": "start", "description": "Start payment test"},
+        {"command": "balance", "description": "Show my balance"},
         {"command": "cancel", "description": "Cancel and go to menu"},
         {"command": "id", "description": "Show my Telegram ID"},
     ])
@@ -296,8 +360,19 @@ def main():
     offset = 0
     while True:
         try:
-            res = requests.get(f"{TG_API}/getUpdates",
-                               params={"timeout": 30, "offset": offset}, timeout=40).json()
+            # ⚠️ বাটন ফিক্স: allowed_updates এ "callback_query" না দিলে (আগের কোনো বট-কোড শুধু
+            # "message" সেট করে রাখলে) বাটনে চাপ বটের কাছে আসেই না।
+            res = requests.post(f"{TG_API}/getUpdates", json={
+                "timeout": 30, "offset": offset,
+                "allowed_updates": ["message", "callback_query"],
+            }, timeout=40).json()
+            if not res.get("ok"):
+                if res.get("error_code") == 409:
+                    print("❌ একই BOT_TOKEN দিয়ে আরেকটা বট/প্রোগ্রাম চলছে। সেটা বন্ধ করুন।")
+                else:
+                    print("Telegram:", res)
+                time.sleep(5)
+                continue
             for upd in res.get("result", []):
                 offset = upd["update_id"] + 1
                 try:
