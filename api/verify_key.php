@@ -3,6 +3,7 @@
 // 🔑 App License Key Verify
 // =========================================================================
 require_once __DIR__ . '/../config.php';
+if (is_file(__DIR__ . '/../snz_errors.php')) require_once __DIR__ . '/../snz_errors.php';   // 🧯 Error log (Admin → Errors)
 
 // -------------------------------------------------------------------------
 // পুরনো config.php দিয়েও যেন চলে — যা নেই শুধু সেটাই এখানে যোগ হবে
@@ -357,6 +358,7 @@ if (strcasecmp($key, MASTER_KEY) === 0) {
 
 $pdo = getDBConnection();
 if (!$pdo) {
+    if (function_exists('snz_log_error')) snz_log_error('web', 'Database connection failed', 'Database connection error — could not connect to MySQL with the details in config.php', '', ['where' => basename(__FILE__)]);
     jsonResponse(500, ["status" => "error", "message" => "Database error."]);
 }
 ensureDatabaseIndexes($pdo);

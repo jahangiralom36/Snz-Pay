@@ -4,6 +4,7 @@
 // অ্যাপ এখানে bKash / Nagad / Rocket SMS পাঠায়, সেটা payments টেবিলে সেভ হয়
 // =========================================================================
 require_once __DIR__ . '/../config.php';
+if (is_file(__DIR__ . '/../snz_errors.php')) require_once __DIR__ . '/../snz_errors.php';   // 🧯 Error log (Admin → Errors)
 
 // -------------------------------------------------------------------------
 // পুরনো config.php দিয়েও যেন চলে — যা নেই শুধু সেটাই এখানে যোগ হবে
@@ -120,7 +121,11 @@ if (empty($data)) {
 
 $secret = trim((string) ($data['secret_key'] ?? $data['secret'] ?? $data['token'] ?? ''));
 if ($secret === '' || (!hash_equals((string) APP_SECRET_TOKEN, $secret) && !hash_equals(SNZ_APP_BUILTIN_TOKEN, $secret))) {
-    jsonResponse(403, ["status" => "error", "message" => "Unauthorized access."]);
+    if (function_exists('snz_log_error')) {
+        snz_log_error('app', 'SMS upload blocked: secret token does not match', 'The app sent a token that does not match APP_SECRET_TOKEN in config.php' . ($secret === '' ? ' (no token sent)' : ''),
+            'Token sent: ' . ($secret === '' ? '(empty)' : substr($secret, 0, 4) . '…' . strlen($secret) . ' chars'), ['where' => 'api/app_gateway.php', 'license_key' => (string) ($data['license_key'] ?? '')]);
+    }
+    jsonResponse(403, ["status" => "error", "message" => "Unauthorized access.", "server" => $_SERVER['SERVER_ADDR'] ?? '']);
 }
 
 // অ্যাপ বিভিন্ন নামে ফিল্ড পাঠালেও ধরতে পারবে
@@ -144,6 +149,7 @@ if ($licenseKey === '') {
 
 $pdo = getDBConnection();
 if (!$pdo) {
+    if (function_exists('snz_log_error')) snz_log_error('web', 'Database connection failed', 'Database connection error — could not connect to MySQL with the details in config.php', '', ['where' => basename(__FILE__)]);
     jsonResponse(500, ["status" => "error", "message" => "Database connection error."]);
 }
 ensureDatabaseIndexes($pdo);

@@ -52,6 +52,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        ErrorReporter.installCrashHandler(this);
+        ErrorReporter.flushAsync(this);
 
         if (!validateSession()) {
             performLogout();

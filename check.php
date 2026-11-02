@@ -30,7 +30,7 @@ if (is_file($cfg)) {
 }
 
 if ($pdo) {
-    foreach (['users', 'plans', 'user_keys', 'key_devices', 'brand_keys', 'payments', 'user_wallets', 'deposit_requests'] as $t) {
+    foreach (['users', 'plans', 'user_keys', 'key_devices', 'brand_keys', 'payments', 'user_wallets', 'deposit_requests', 'error_logs'] as $t) {
         try {
             $n = (int) $pdo->query("SELECT COUNT(*) FROM `$t`")->fetchColumn();
             row(true, "Table: $t", "$n rows");
@@ -44,7 +44,7 @@ if ($pdo) {
     } catch (Throwable $e) {}
 }
 
-foreach (['api/app_gateway.php', 'api/verify_key.php', 'api/verify_payment.php', 'api/app_config.php', 'index.php', 'dashboard.php', 'admin.php'] as $f) {
+foreach (['api/app_gateway.php', 'api/verify_key.php', 'api/verify_payment.php', 'api/app_config.php', 'api/app_error.php', 'snz_errors.php', 'index.php', 'dashboard.php', 'admin.php'] as $f) {
     row(is_file(__DIR__ . '/' . $f), "File: $f");
 }
 row(is_writable(__DIR__), 'Website folder writable', 'needed for settings files');

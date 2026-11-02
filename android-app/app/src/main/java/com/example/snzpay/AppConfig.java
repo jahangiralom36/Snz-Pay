@@ -163,6 +163,9 @@ public final class AppConfig {
     public static void forceLogout(Context ctx) {
         SharedPreferences prefs = ctx.getSharedPreferences(AUTH_PREFS, Context.MODE_PRIVATE);
         String reason = prefs.getString("LOGOUT_REASON", "");
+        ErrorReporter.report(ctx, "Auto logout: license key not valid",
+                reason.isEmpty() ? "The app logged out because the key is no longer valid" : reason,
+                "Key: " + prefs.getString("SAVED_KEY", ""));
         prefs.edit().clear().putString("LOGOUT_REASON", reason).commit();
         SyncJobService.cancelAll(ctx);
         try { ctx.stopService(new android.content.Intent(ctx, PaymentService.class)); } catch (Exception ignored) {}
@@ -255,7 +258,19 @@ public final class AppConfig {
     }
 
     /** DNS-over-HTTPS → domain এর A record */
+    private static volatile String dohHost = null, dohIp = null;
+    private static volatile long dohUntil = 0;
+
     static String freshDnsIp(String host) {
+        if (host.equals(dohHost) && System.currentTimeMillis() < dohUntil) return dohIp;
+        String ip = lookupDoh(host);
+        dohHost = host;
+        dohIp = ip;
+        dohUntil = System.currentTimeMillis() + (ip != null ? 10 : 2) * 60 * 1000L;   // ১০ মিনিট মনে রাখা
+        return ip;
+    }
+
+    private static String lookupDoh(String host) {
         String[][] resolvers = {
                 {"https://dns.google/resolve?type=A&name=", null},
                 {"https://cloudflare-dns.com/dns-query?type=A&name=", "application/dns-json"},
@@ -441,7 +456,7 @@ public final class AppConfig {
         boolean netDown = false;
         try {
             first = rawPostJson(url, body, timeoutMs);
-            if (isApiJson(first)) return first;
+            if (isApiJson(first) && first.code == 200) return first;
         } catch (java.net.UnknownHostException | java.net.SocketTimeoutException e) {
             firstErr = e;
             netDown = true;
@@ -452,6 +467,8 @@ public final class AppConfig {
         HttpResult d = viaFreshDns("POST", url, "application/json; charset=utf-8", jsonBytes, timeoutMs);
         if (isApiJson(d)) return d;
         if (netDown) throw firstErr;   // নেট/টাইমআউট — আবার চেষ্টা করে লাভ নেই
+        // আমাদের সার্ভারই উত্তর দিয়েছে (key ভুল ইত্যাদি) → আবার চেষ্টা করে লাভ নেই
+        if (isApiJson(first)) return first;
         try {
             HttpResult form = rawPostForm(url, body, timeoutMs);
             if (isApiJson(form)) return form;

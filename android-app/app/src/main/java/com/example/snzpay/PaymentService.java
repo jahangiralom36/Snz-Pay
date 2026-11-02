@@ -78,6 +78,7 @@ public class PaymentService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        ErrorReporter.installCrashHandler(this);
         createNotificationChannel();
         showNotification();
         registerNetworkWatcher();

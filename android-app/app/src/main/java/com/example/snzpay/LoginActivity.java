@@ -28,6 +28,7 @@ public class LoginActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        ErrorReporter.installCrashHandler(this);
         prefs = getSharedPreferences(AppConfig.AUTH_PREFS, MODE_PRIVATE);
         deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
         if (deviceId == null) deviceId = "";
@@ -144,12 +145,16 @@ public class LoginActivity extends Activity {
                                 : "The server did not return a valid answer.");
                     }
                     final String finalMsg = msg;
+                    ErrorReporter.report(this, "Login failed (HTTP " + res.code + ")", msg,
+                            "Key: " + key + "\nServer IP seen by phone: " + AppConfig.resolvedIps());
                     runOnUiThread(() -> {
                         resetButton();
                         showThreeSecondPopup(finalMsg.startsWith("Server problem") ? "SERVER ERROR" : "AUTH FAILED", finalMsg);
                     });
                 }
             } catch (Exception e) {
+                ErrorReporter.report(this, "Login failed: cannot connect", e.getClass().getSimpleName()
+                        + (e.getMessage() == null ? "" : ": " + e.getMessage()), "Key: " + key);
                 runOnUiThread(() -> {
                     resetButton();
                     showThreeSecondPopup("SERVER ERROR", "Unable to connect to server. Check your internet.");

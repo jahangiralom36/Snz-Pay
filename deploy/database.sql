@@ -183,3 +183,26 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- ✅ শেষ। এরপর সাইটে গিয়ে প্রথমে নিজের অ্যাকাউন্ট Register করুন —
 --    প্রথম অ্যাকাউন্ট (#1) টাই master key (অ্যাডমিনের অ্যাপ) এর অ্যাকাউন্ট।
 -- =========================================================================
+
+-- -------------------------------------------------------------------------
+-- 9) error_logs — Admin → Errors (App Error / Website Error)
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `error_logs` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `source` VARCHAR(10) NOT NULL DEFAULT 'web',
+  `err_hash` CHAR(32) NOT NULL,
+  `title` VARCHAR(190) NOT NULL DEFAULT '',
+  `message` TEXT NULL,
+  `detail` TEXT NULL,
+  `where_at` VARCHAR(255) NULL,
+  `device` VARCHAR(190) NULL,
+  `license_key` VARCHAR(100) NULL,
+  `ip` VARCHAR(64) NULL,
+  `app_version` VARCHAR(30) NULL,
+  `hits` INT NOT NULL DEFAULT 1,
+  `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+  `first_seen` DATETIME NULL,
+  `last_seen` DATETIME NULL,
+  UNIQUE KEY `uq_err_hash` (`err_hash`),
+  KEY `idx_err_src` (`source`, `last_seen`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

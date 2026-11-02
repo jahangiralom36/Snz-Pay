@@ -95,6 +95,7 @@ public final class SyncManager {
                 }
             }
             if (changed) notifyRefresh(ctx);
+            ErrorReporter.flush(ctx);   // জমে থাকা app error গুলোও পাঠানো
             return db.getUnsyncedCount();
         }
     }
@@ -133,7 +134,8 @@ public final class SyncManager {
 
             String reason;
             if (res.code == 403 && serverMsg.toLowerCase().contains("unauthorized")) {
-                reason = "Secret token does not match the server (APP_SECRET_TOKEN in config.php)";
+                reason = "Server rejected the app token (server IP " + AppConfig.resolvedIps()
+                        + "). If this is the old hosting, update the app (v15) — otherwise set APP_SECRET_TOKEN in config.php";
             } else if (res.code == 403) {
                 reason = "License key invalid or expired — login again with an active key";
                 if (AppConfig.verifyKeyNow(ctx) == AppConfig.KEY_INVALID) AppConfig.forceLogout(ctx);
@@ -165,6 +167,8 @@ public final class SyncManager {
     private static void fail(Context ctx, DatabaseHelper.Tx t, String reason) {
         DatabaseHelper.get(ctx).markAttempt(t.id, reason);
         setLastError(ctx, reason);
+        ErrorReporter.report(ctx, "SMS upload failed", reason,
+                t.method + " • TrxID " + t.trxId + " • Tk " + t.amount + "\nServer IP seen by phone: " + AppConfig.resolvedIps());
     }
 
     /** শেষবার আপলোড কেন ব্যর্থ হয়েছিল (সফল হলে null) — অ্যাপের স্ক্রিনে দেখানো হয় */
