@@ -1143,7 +1143,7 @@ try {
     $keyDevicesMap = snzKeyDevices($pdo, array_column($allUserKeys, 'id'));
 
     foreach ($allUserKeys as $k) {
-        if (strtotime($k['expires_at']) >= time()) {
+        if (strtotime($k['expires_at']) >= time() && ($k['status'] ?? 'active') === 'active') {
             $activeKeys[] = $k;
         } else {
             $deactivatedKeys[] = $k;
@@ -2268,7 +2268,9 @@ try {
                                     <div class="space-y-1 min-w-0 w-full md:w-auto">
                                         <div class="flex flex-wrap items-center gap-2">
                                             <span class="text-xs font-bold text-white"><?= htmlspecialchars($k['plan_name']) ?></span>
-                                            <?php if ($isExp): ?>
+                                            <?php if (($k['status'] ?? 'active') !== 'active'): ?>
+                                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">BANNED</span>
+                                            <?php elseif ($isExp): ?>
                                                 <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#0c2454] text-[#00D9FF] border border-[#16418f]">EXPIRED</span>
                                             <?php else: ?>
                                                 <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#00D89A]/15 text-[#00D89A] border border-[#00D89A]/30">ACTIVE</span>

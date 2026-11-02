@@ -375,21 +375,34 @@ public class MainActivity extends Activity {
             SyncManager.scanInbox(app);
             SyncManager.syncPending(app);
         }).start();
-        checkKeyOnServer();
+        keyHandler.removeCallbacks(keyLoop);
+        keyHandler.post(keyLoop);
     }
 
     private long lastKeyCheck = 0;
+    private boolean logoutShown = false;
+    private final android.os.Handler keyHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    // অ্যাপ স্ক্রিনে খোলা থাকলে প্রতি ১০ সেকেন্ডে সার্ভারে কী চেক
+    private final Runnable keyLoop = new Runnable() {
+        @Override
+        public void run() {
+            checkKeyOnServer();
+            keyHandler.postDelayed(this, 10 * 1000L);
+        }
+    };
 
-    /** কী ডাটাবেজে না থাকলে / মেয়াদ শেষ / অন্য ফোনে লক → লগআউট */
+    /** কী ডাটাবেজে না থাকলে / Ban / মেয়াদ শেষ / অন্য ফোনে লক → সাথে সাথে লগআউট */
     private void checkKeyOnServer() {
-        if (System.currentTimeMillis() - lastKeyCheck < 2 * 60 * 1000L) return;
+        if (logoutShown || System.currentTimeMillis() - lastKeyCheck < 8 * 1000L) return;
         lastKeyCheck = System.currentTimeMillis();
         final Context app = getApplicationContext();
         new Thread(() -> {
             int r = AppConfig.verifyKeyNow(app);
             if (r == AppConfig.KEY_INVALID) {
                 runOnUiThread(() -> {
-                    if (isFinishing()) return;
+                    if (isFinishing() || logoutShown) return;
+                    logoutShown = true;
+                    keyHandler.removeCallbacks(keyLoop);
                     String reason = getSharedPreferences(AppConfig.AUTH_PREFS, MODE_PRIVATE).getString("LOGOUT_REASON", "");
                     new PremiumDialog(this)
                             .icon("🔑", PremiumDialog.RED)
@@ -407,6 +420,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        keyHandler.removeCallbacks(keyLoop);
         if (receiverRegistered) {
             try { unregisterReceiver(refreshReceiver); } catch (Exception ignored) {}
             receiverRegistered = false;

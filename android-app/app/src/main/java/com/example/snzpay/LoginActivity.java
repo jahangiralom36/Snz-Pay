@@ -132,15 +132,20 @@ public class LoginActivity extends Activity {
                         goToDashboard();
                     });
                 } else {
-                    String msg = "Key is invalid or expired on server.";
-                    try {
-                        String m = new JSONObject(res.body).optString("message", "");
-                        if (!m.isEmpty()) msg = m;
-                    } catch (Exception ignored) {}
+                    String msg;
+                    if (AppConfig.isApiJson(res)) {
+                        msg = new JSONObject(res.body).optString("message", "Key is invalid or expired on server.");
+                    } else {
+                        // সার্ভার আমাদের API এর উত্তর দেয়নি → আসল কারণ দেখানো
+                        msg = "Server problem (HTTP " + res.code + "): " + AppConfig.VERIFY_KEY_URL
+                                + (res.code == 404 ? " was not found on the server. Check that the api folder is uploaded to the website's main folder."
+                                : res.code == 403 ? " is blocked by the hosting firewall."
+                                : " did not return a valid answer.");
+                    }
                     final String finalMsg = msg;
                     runOnUiThread(() -> {
                         resetButton();
-                        showThreeSecondPopup("AUTH FAILED", finalMsg);
+                        showThreeSecondPopup(finalMsg.startsWith("Server problem") ? "SERVER ERROR" : "AUTH FAILED", finalMsg);
                     });
                 }
             } catch (Exception e) {

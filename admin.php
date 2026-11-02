@@ -518,7 +518,7 @@ $error = "";
 $csrfOk = hash_equals($CSRF, (string) ($_POST['csrf'] ?? $_GET['csrf'] ?? ''));
 if (($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['delete_key'])) && !$csrfOk) {
     $error = "Session expired. Please try again.";
-    unset($_POST['action_create_key'], $_POST['action_add_balance'], $_POST['action_update_payments'], $_POST['action_update_site'], $_POST['action_update_app'], $_POST['action_add_sms_rule'], $_POST['action_toggle_sms_rule'], $_POST['action_delete_sms_rule'], $_POST['action_test_sms_rule'], $_POST['action_reset_device'], $_POST['action_remove_device'], $_POST['action_save_plan'], $_POST['action_delete_plan'], $_POST['action_set_receiver'], $_POST['action_pin_plan'], $_POST['action_move_plan'], $_POST['action_save_autopay'], $_POST['action_deposit_decide'], $_GET['delete_key']);
+    unset($_POST['action_create_key'], $_POST['action_add_balance'], $_POST['action_update_payments'], $_POST['action_update_site'], $_POST['action_update_app'], $_POST['action_add_sms_rule'], $_POST['action_toggle_sms_rule'], $_POST['action_delete_sms_rule'], $_POST['action_test_sms_rule'], $_POST['action_reset_device'], $_POST['action_remove_device'], $_POST['action_save_plan'], $_POST['action_delete_plan'], $_POST['action_set_receiver'], $_POST['action_pin_plan'], $_POST['action_move_plan'], $_POST['action_save_autopay'], $_POST['action_deposit_decide'], $_POST['action_ban_key'], $_GET['delete_key']);
 }
 
 // =========================================================================
@@ -924,6 +924,15 @@ if (isset($_POST['action_reset_device'])) {
     $pdo->prepare("DELETE FROM key_devices WHERE key_id = ?")->execute([$rid]);
     $msg = "All phones removed! This key can now be logged in on new phones.";
 }
+// 🚫 Ban / Unban — Ban করলে ১ মিনিটের মধ্যে অ্যাপ লগআউট হয়ে যায়
+if (isset($_POST['action_ban_key'])) {
+    $activeSection = 'sec-licenses';
+    $bid = intval($_POST['key_id'] ?? 0);
+    $pdo->prepare("UPDATE user_keys SET status = IF(status = 'active', 'banned', 'active') WHERE id = ?")->execute([$bid]);
+    $st = $pdo->prepare("SELECT status FROM user_keys WHERE id = ?");
+    $st->execute([$bid]);
+    $msg = $st->fetchColumn() === 'banned' ? "Key banned. The app will log out within a minute." : "Key unbanned.";
+}
 if (isset($_POST['action_remove_device'])) {
     $activeSection = 'sec-licenses';
     $did = intval($_POST['device_row_id'] ?? 0);
@@ -1034,7 +1043,7 @@ if (isset($_GET['delete_key'])) {
 
 // Statistics (password সহ সব কলাম আনার দরকার নেই → দ্রুত)
 $allUsers = $pdo->query("SELECT id, username, email, balance, created_at FROM users ORDER BY id DESC")->fetchAll();
-$allKeys = $pdo->query("SELECT uk.id, uk.license_key, uk.plan_name, uk.expires_at, uk.device_id, uk.device_name, uk.device_bound_at, uk.last_seen_at, uk.max_devices, uk.max_brand_keys, u.username, u.email FROM user_keys uk JOIN users u ON uk.user_id = u.id ORDER BY uk.id DESC LIMIT 50")->fetchAll();
+$allKeys = $pdo->query("SELECT uk.id, uk.license_key, uk.plan_name, uk.expires_at, uk.status, uk.device_id, uk.device_name, uk.device_bound_at, uk.last_seen_at, uk.max_devices, uk.max_brand_keys, u.username, u.email FROM user_keys uk JOIN users u ON uk.user_id = u.id ORDER BY uk.id DESC LIMIT 50")->fetchAll();
 $keyDevicesMap = snzKeyDevices($pdo, array_column($allKeys, 'id'));
 $allPlans = snzGetPlans($pdo, false);
 $totalKeys = (int) $pdo->query("SELECT COUNT(*) FROM user_keys")->fetchColumn();
@@ -1761,7 +1770,9 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
                                         <td class="p-3 font-sans"><?= htmlspecialchars($k['plan_name']) ?></td>
                                         <td class="p-3 font-sans">
                                             <?= date("d M Y, h:i A", strtotime($k['expires_at'])) ?>
-                                            <?php if ($expired): ?>
+                                            <?php if (($k['status'] ?? 'active') !== 'active'): ?>
+                                                <span class="text-rose-400 text-[10px] block font-bold">[BANNED]</span>
+                                            <?php elseif ($expired): ?>
                                                 <span class="text-slate-400 text-[10px] block font-bold">[EXPIRED]</span>
                                             <?php else: ?>
                                                 <span class="text-[#00D89A] text-[10px] block font-bold">[ACTIVE]</span>
@@ -1787,6 +1798,12 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
                                             <?php if (!$devs): ?><span class="text-slate-500 text-[11px] block mt-1">Not connected</span><?php endif; ?>
                                         </td>
                                         <td class="p-3 font-sans text-right">
+                                            <form method="POST" class="mb-1.5" onsubmit="return confirm('<?= ($k['status'] ?? 'active') === 'active' ? 'Ban this key? The app will log out.' : 'Unban this key?' ?>');">
+                                                <input type="hidden" name="csrf" value="<?= $CSRF ?>">
+                                                <input type="hidden" name="action_ban_key" value="1">
+                                                <input type="hidden" name="key_id" value="<?= (int) $k['id'] ?>">
+                                                <button type="submit" class="text-xs font-bold px-3 py-1.5 rounded-xl border inline-flex items-center gap-1 <?= ($k['status'] ?? 'active') === 'active' ? 'text-amber-400 border-amber-500/40 bg-amber-500/10' : 'text-[#00D89A] border-[#00D89A]/40 bg-[#00D89A]/10' ?>"><?= ($k['status'] ?? 'active') === 'active' ? '🚫 Ban' : '✓ Unban' ?></button>
+                                            </form>
                                             <a href="?delete_key=<?= $k['id'] ?>&amp;csrf=<?= $CSRF ?>" onclick="return confirm('Revoke this key? It will be permanently removed from Firebase & Database!')" class="text-slate-300 bg-[#061535] hover:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 text-xs font-bold inline-flex items-center gap-1">
                                                 <i class="fa-solid fa-trash-can text-slate-400"></i> Delete
                                             </a>

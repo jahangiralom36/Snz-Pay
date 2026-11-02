@@ -48,8 +48,17 @@ public class PaymentService extends Service {
                         SyncManager.scanInbox(app);
                     }
                     SyncManager.syncPending(app);
-                    // প্রতি ৩০ মিনিটে কী সার্ভারে আছে কিনা
-                    if (SystemClock.elapsedRealtime() - lastKeyCheck > 30 * 60 * 1000L) {
+                    // মেয়াদ ফোনের ঘড়িতেই শেষ → নেট না থাকলেও লগআউট
+                    android.content.SharedPreferences ap = app.getSharedPreferences(AppConfig.AUTH_PREFS, MODE_PRIVATE);
+                    long exp = ap.getLong("EXPIRE_TIME", 0);
+                    if (!AppConfig.MASTER_KEY.equalsIgnoreCase(ap.getString("SAVED_KEY", "")) && exp > 0 && System.currentTimeMillis() > exp) {
+                        ap.edit().putString("LOGOUT_REASON", "Your license key has expired. Please renew your plan.").apply();
+                        AppConfig.forceLogout(app);
+                        handler.post(() -> stopSelf());
+                        return;
+                    }
+                    // প্রতি মিনিটে কী সার্ভারে আছে কিনা (Ban / Delete / মেয়াদ শেষ → লগআউট)
+                    if (SystemClock.elapsedRealtime() - lastKeyCheck > 55 * 1000L) {
                         lastKeyCheck = SystemClock.elapsedRealtime();
                         if (AppConfig.verifyKeyNow(app) == AppConfig.KEY_INVALID) {
                             AppConfig.forceLogout(app);

@@ -368,17 +368,20 @@ $deviceId = substr(preg_replace('/[^A-Za-z0-9_.:-]/', '', (string) ($data['devic
 $deviceName = trim(mb_substr(strip_tags((string) ($data['device_name'] ?? '')), 0, 150));
 
 // ইনডেক্স ব্যবহার করে দ্রুত সার্চ; একই key এর একাধিক row থাকলে সবচেয়ে বেশি মেয়াদিটা
-$stmt = $pdo->prepare("SELECT id, plan_name, expires_at, device_id, device_name, max_devices FROM user_keys WHERE license_key = ? AND status = 'active' ORDER BY expires_at DESC LIMIT 1");
+$stmt = $pdo->prepare("SELECT id, plan_name, expires_at, device_id, device_name, max_devices, status FROM user_keys WHERE license_key = ? ORDER BY (status = 'active') DESC, expires_at DESC LIMIT 1");
 $stmt->execute([$key]);
 $keyRow = $stmt->fetch();
 
 if (!$keyRow) {
-    jsonResponse(403, ["status" => "error", "message" => "Invalid or inactive key."]);
+    jsonResponse(403, ["status" => "error", "message" => "This license key was not found (it may have been deleted).", "reason" => "not_found"]);
+}
+if ($keyRow['status'] !== 'active') {
+    jsonResponse(403, ["status" => "error", "message" => "This license key has been banned by admin.", "reason" => "banned"]);
 }
 
 $expireTime = strtotime($keyRow['expires_at']);
 if ($expireTime === false || $expireTime < time()) {
-    jsonResponse(403, ["status" => "error", "message" => "Key has expired."]);
+    jsonResponse(403, ["status" => "error", "message" => "Your license key has expired. Please renew your plan.", "reason" => "expired"]);
 }
 
 // ---------------------------------------------------------------------

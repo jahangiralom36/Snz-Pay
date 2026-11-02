@@ -199,9 +199,19 @@ public final class AppConfig {
         HttpResult(int code, String body) { this.code = code; this.body = body; }
     }
 
+    // কিছু হোস্টিং এর ফায়ারওয়াল (ModSecurity / Imunify360) অ্যাপের ডিফল্ট পরিচয় দেখলে 403/404 দেয়
+    private static final String USER_AGENT = "Mozilla/5.0 (Linux; Android " + Build.VERSION.RELEASE + ") AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36 SNZPayApp/2";
+
+    private static void commonHeaders(HttpURLConnection conn) {
+        conn.setRequestProperty("User-Agent", USER_AGENT);
+        conn.setRequestProperty("Accept", "application/json, text/plain, */*");
+        conn.setRequestProperty("X-Requested-With", "com.example.snzpay");
+    }
+
     public static HttpResult httpGet(String url, int timeoutMs) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod("GET");
+        commonHeaders(conn);
         conn.setConnectTimeout(timeoutMs);
         conn.setReadTimeout(timeoutMs);
         conn.setUseCaches(false);
@@ -213,9 +223,75 @@ public final class AppConfig {
         }
     }
 
+    /** উত্তরটা কি আমাদের API এর JSON? (না হলে মাঝপথে ফায়ারওয়াল/ভুল পেজ) */
+    public static boolean isApiJson(HttpResult r) {
+        if (r == null || r.body == null) return false;
+        String b = r.body.trim();
+        if (!b.startsWith("{")) return false;
+        try { return new JSONObject(b).has("status"); } catch (Exception e) { return false; }
+    }
+
+    /**
+     * JSON POST — ফায়ারওয়াল আটকালে (API JSON না এলে) নিজে থেকে
+     * ১) form POST, ২) GET দিয়ে আবার চেষ্টা করে। সার্ভার তিনভাবেই বোঝে।
+     */
     public static HttpResult httpPostJson(String url, JSONObject body, int timeoutMs) throws Exception {
+        HttpResult first = null;
+        Exception firstErr = null;
+        try {
+            first = rawPostJson(url, body, timeoutMs);
+            if (isApiJson(first)) return first;
+        } catch (java.net.UnknownHostException | java.net.SocketTimeoutException e) {
+            throw e;   // নেট/টাইমআউট — আবার চেষ্টা করে লাভ নেই
+        } catch (Exception e) {
+            firstErr = e;
+        }
+        try {
+            HttpResult form = rawPostForm(url, body, timeoutMs);
+            if (isApiJson(form)) return form;
+            HttpResult get = httpGet(url + (url.contains("?") ? "&" : "?") + toQuery(body), timeoutMs);
+            if (isApiJson(get)) return get;
+        } catch (Exception ignored) {}
+        if (first != null) return first;
+        throw firstErr != null ? firstErr : new Exception("No response");
+    }
+
+    private static String toQuery(JSONObject body) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        java.util.Iterator<String> it = body.keys();
+        while (it.hasNext()) {
+            String k = it.next();
+            if (sb.length() > 0) sb.append('&');
+            sb.append(java.net.URLEncoder.encode(k, "UTF-8")).append('=')
+              .append(java.net.URLEncoder.encode(String.valueOf(body.opt(k)), "UTF-8"));
+        }
+        return sb.toString();
+    }
+
+    private static HttpResult rawPostForm(String url, JSONObject body, int timeoutMs) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setRequestMethod("POST");
+        commonHeaders(conn);
+        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=utf-8");
+        conn.setDoOutput(true);
+        conn.setConnectTimeout(timeoutMs);
+        conn.setReadTimeout(timeoutMs);
+        conn.setUseCaches(false);
+        try {
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(toQuery(body).getBytes(StandardCharsets.UTF_8));
+            }
+            int code = conn.getResponseCode();
+            return new HttpResult(code, readBody(conn, code));
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    private static HttpResult rawPostJson(String url, JSONObject body, int timeoutMs) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setRequestMethod("POST");
+        commonHeaders(conn);
         conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
         conn.setDoOutput(true);
         conn.setConnectTimeout(timeoutMs);
@@ -251,6 +327,7 @@ public final class AppConfig {
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(url).openConnection();
+            commonHeaders(conn);
             conn.setConnectTimeout(8000);
             conn.setReadTimeout(10000);
             if (conn.getResponseCode() != 200) return;
