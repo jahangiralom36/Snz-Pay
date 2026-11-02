@@ -69,7 +69,7 @@ public class PaymentService extends Service {
                     handler.post(() -> showNotification());
                 } catch (Exception ignored) {}
             }).start();
-            handler.postDelayed(this, 60 * 1000L);
+            handler.postDelayed(this, 30 * 1000L);   // প্রতি ৩০ সেকেন্ডে বাকি SMS অটো পাঠানো
         }
     };
 

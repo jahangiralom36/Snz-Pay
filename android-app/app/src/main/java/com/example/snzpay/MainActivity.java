@@ -251,7 +251,7 @@ public class MainActivity extends Activity {
                 tvSyncStatus.setText("✓ All SMS uploaded to server");
                 tvSyncStatus.setTextColor(Color.parseColor("#16A34A"));
             } else if (err == null || err.equals("No internet connection")) {
-                tvSyncStatus.setText("⏳ " + waiting + " SMS waiting for internet — will upload automatically");
+                tvSyncStatus.setText("⏳ " + waiting + " SMS waiting — uploading automatically");
                 tvSyncStatus.setTextColor(Color.parseColor("#D97706"));
             } else {
                 // নেট আছে কিন্তু সার্ভার নিচ্ছে না → আসল কারণ দেখানো
