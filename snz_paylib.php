@@ -42,7 +42,8 @@ function snz_pay_normalize(array $m) {
         'color'    => snz_pay_clean_color($m['color'] ?? ''),
         'kind'     => $kind,
         'type'     => $kind === 'mobile' ? $type : '',
-        'number'   => mb_substr(trim((string) ($m['number'] ?? '')), 0, 120),
+        // Bangla QR: যেকোনো অ্যাপ থেকে স্ক্যান — নম্বর লাগে না, দেখানোও হয় না
+        'number'   => $kind === 'qr' ? '' : mb_substr(trim((string) ($m['number'] ?? '')), 0, 120),
         'qr'       => (string) ($m['qr'] ?? ''),
         'note'     => mb_substr(trim((string) ($m['note'] ?? '')), 0, 1000),
         'currency' => $currency,
@@ -96,7 +97,7 @@ function snz_pay_action(array $m) {
 }
 
 function snz_pay_type_label(array $m) {
-    if ($m['kind'] !== 'mobile') return ['qr' => 'QR', 'crypto' => 'Crypto', 'bank' => 'Bank'][$m['kind']] ?? '';
+    if ($m['kind'] !== 'mobile') return ['qr' => 'Bangla QR', 'crypto' => 'Crypto', 'bank' => 'Bank'][$m['kind']] ?? '';
     return ucfirst($m['type']);
 }
 

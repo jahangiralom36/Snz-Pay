@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `password` VARCHAR(255) NOT NULL,
   `balance` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `has_used_trial` TINYINT(1) NOT NULL DEFAULT 0,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'active',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_users_email` (`email`),
