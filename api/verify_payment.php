@@ -113,7 +113,7 @@ if (!function_exists('snzEnsurePlanSchema')) {
 
     function snzEnsurePlanSchema(PDO $pdo) {
         $flag = snzRootDir() . '/.db_plans_v1';
-        if (is_file($flag)) return;
+        if (is_file($flag)) { snzEnsurePlanSchemaV2($pdo); return; }
         $sqls = [
             "CREATE TABLE IF NOT EXISTS `plans` (
                 `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -180,16 +180,62 @@ if (!function_exists('snzEnsurePlanSchema')) {
             $pdo->exec("UPDATE user_keys uk JOIN plans p ON p.name = uk.plan_name SET uk.plan_id = p.id WHERE uk.plan_id IS NULL");
         } catch (Throwable $e) {}
         @file_put_contents($flag, date('c'));
+        snzEnsurePlanSchemaV2($pdo);
         snzWritePlansCache($pdo);
+    }
+
+    /** v2: প্ল্যানের ক্যাটাগরি (ফিল্টার বাটন) + Pin, আর ডিপোজিট রিকোয়েস্ট টেবিল */
+    function snzEnsurePlanSchemaV2(PDO $pdo) {
+        $flag2 = snzRootDir() . '/.db_plans_v2';
+        if (is_file($flag2)) return;
+        foreach ([
+            "ALTER TABLE `plans` ADD COLUMN `category` VARCHAR(40) NULL",
+            "ALTER TABLE `plans` ADD COLUMN `is_pinned` TINYINT(1) NOT NULL DEFAULT 0",
+            "CREATE TABLE IF NOT EXISTS `deposit_requests` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL,
+                `trx_id` VARCHAR(64) NOT NULL,
+                `provider` VARCHAR(30) NULL,
+                `amount` DECIMAL(12,2) NOT NULL DEFAULT 0,
+                `attempts` INT NOT NULL DEFAULT 0,
+                `last_error` VARCHAR(255) NULL,
+                `status` VARCHAR(20) NOT NULL DEFAULT 'trying',
+                `admin_note` VARCHAR(255) NULL,
+                `credited_amount` DECIMAL(12,2) NULL,
+                `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` DATETIME NULL,
+                UNIQUE KEY `uq_user_trx` (`user_id`, `trx_id`),
+                KEY `idx_dr_status` (`status`)
+            ) DEFAULT CHARSET=utf8mb4",
+        ] as $sql) {
+            try { $pdo->exec($sql); } catch (Throwable $e) {}
+        }
+        @file_put_contents($flag2, date('c'));
+        @unlink(snzRootDir() . '/plans_cache.json');
     }
 
     function snzGetPlans(PDO $pdo, $onlyActive = true) {
         try {
-            $sql = "SELECT * FROM plans " . ($onlyActive ? "WHERE status = 'active' " : "") . "ORDER BY sort_order ASC, price ASC, id ASC";
+            $sql = "SELECT * FROM plans " . ($onlyActive ? "WHERE status = 'active' " : "") . "ORDER BY is_pinned DESC, sort_order ASC, price ASC, id ASC";
             return $pdo->query($sql)->fetchAll();
         } catch (Throwable $e) {
-            return [];
+            try {   // পুরনো টেবিলে is_pinned না থাকলে
+                $sql = "SELECT * FROM plans " . ($onlyActive ? "WHERE status = 'active' " : "") . "ORDER BY sort_order ASC, price ASC, id ASC";
+                return $pdo->query($sql)->fetchAll();
+            } catch (Throwable $e2) {
+                return [];
+            }
         }
+    }
+
+    /** ফিল্টার বাটনের জন্য ক্যাটাগরি তালিকা */
+    function snzPlanCategories(array $plans) {
+        $cats = [];
+        foreach ($plans as $p) {
+            $c = trim((string) ($p['category'] ?? ''));
+            if ($c !== '' && !in_array($c, $cats, true)) $cats[] = $c;
+        }
+        return $cats;
     }
 
     function snzGetPlan(PDO $pdo, $id) {
