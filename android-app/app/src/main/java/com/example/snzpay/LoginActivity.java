@@ -137,10 +137,11 @@ public class LoginActivity extends Activity {
                         msg = new JSONObject(res.body).optString("message", "Key is invalid or expired on server.");
                     } else {
                         // সার্ভার আমাদের API এর উত্তর দেয়নি → আসল কারণ দেখানো
-                        msg = "Server problem (HTTP " + res.code + "): " + AppConfig.VERIFY_KEY_URL
-                                + (res.code == 404 ? " was not found on the server. Check that the api folder is uploaded to the website's main folder."
-                                : res.code == 403 ? " is blocked by the hosting firewall."
-                                : " did not return a valid answer.");
+                        msg = "Server problem (HTTP " + res.code + "). The phone is connecting to server IP "
+                                + AppConfig.resolvedIps() + ". "
+                                + (res.code == 404 ? "If this is not your new hosting's IP (see check.php), the phone still uses the old DNS — set Private DNS to dns.google or wait for DNS to update."
+                                : res.code == 403 ? "The hosting firewall is blocking the app."
+                                : "The server did not return a valid answer.");
                     }
                     final String finalMsg = msg;
                     runOnUiThread(() -> {

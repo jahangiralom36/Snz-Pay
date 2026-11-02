@@ -65,7 +65,9 @@ h1{margin:0 0 4px;font-size:20px;color:#fff}.sub{color:#94a3b8;font-size:12px;ma
 code{color:#00D9FF}
 </style></head><body><div class="box">
 <h1>🩺 SNZPay Server Check</h1>
-<div class="sub">Site URL: <code><?= htmlspecialchars($base) ?></code><br>App gateway: <code><?= htmlspecialchars($base) ?>/api/app_gateway.php</code></div>
+<div class="sub">Site URL: <code><?= htmlspecialchars($base) ?></code><br>
+Server IP (this hosting): <code style="font-size:15px"><?= htmlspecialchars($_SERVER['SERVER_ADDR'] ?? 'unknown') ?></code><br>
+DNS of <?= htmlspecialchars($_SERVER['HTTP_HOST'] ?? '') ?> (seen by the server): <code><?= htmlspecialchars(implode(', ', (array) @gethostbynamel($_SERVER['HTTP_HOST'] ?? '') ?: ['unknown'])) ?></code><br>App gateway: <code><?= htmlspecialchars($base) ?>/api/app_gateway.php</code></div>
 <?php foreach ($rows as [$ok, $t, $d]): ?>
 <div class="r"><div class="i <?= $ok ? 'ok' : 'no' ?>"><?= $ok ? '✔' : '✘' ?></div><div><div><?= htmlspecialchars($t) ?></div><?php if ($d !== ''): ?><div class="d"><?= $d ?></div><?php endif; ?></div></div>
 <?php endforeach; ?>

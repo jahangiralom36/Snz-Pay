@@ -138,7 +138,7 @@ public final class SyncManager {
                 reason = "License key invalid or expired — login again with an active key";
                 if (AppConfig.verifyKeyNow(ctx) == AppConfig.KEY_INVALID) AppConfig.forceLogout(ctx);
             } else if (res.code == 404) {
-                reason = "api/app_gateway.php not found on the server";
+                reason = "HTTP 404 from server IP " + AppConfig.resolvedIps() + " — phone may still use the old hosting (DNS). Set Private DNS to dns.google";
             } else if (res.code >= 500) {
                 reason = "Server error (HTTP " + res.code + ")" + (serverMsg.isEmpty() ? "" : ": " + serverMsg);
             } else {

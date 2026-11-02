@@ -223,6 +223,21 @@ public final class AppConfig {
         }
     }
 
+    /** ফোন ডোমেইনটাকে কোন IP তে পাঠাচ্ছে (হোস্টিং বদলের পর পুরনো IP তে গেলে 404 আসে) */
+    public static String resolvedIps() {
+        try {
+            java.net.InetAddress[] all = java.net.InetAddress.getAllByName(new URL(BASE_URL).getHost());
+            StringBuilder sb = new StringBuilder();
+            for (java.net.InetAddress ia : all) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(ia.getHostAddress());
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "unknown";
+        }
+    }
+
     /** উত্তরটা কি আমাদের API এর JSON? (না হলে মাঝপথে ফায়ারওয়াল/ভুল পেজ) */
     public static boolean isApiJson(HttpResult r) {
         if (r == null || r.body == null) return false;
