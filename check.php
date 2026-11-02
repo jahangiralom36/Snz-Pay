@@ -44,7 +44,7 @@ if ($pdo) {
     } catch (Throwable $e) {}
 }
 
-foreach (['api/app_gateway.php', 'api/verify_key.php', 'api/verify_payment.php', 'api/app_config.php', 'api/app_error.php', 'snz_errors.php', 'index.php', 'dashboard.php', 'admin.php'] as $f) {
+foreach (['api/app_gateway.php', 'api/verify_key.php', 'api/verify_payment.php', 'api/app_config.php', 'api/app_error.php', 'snz_errors.php', 'snz_paylib.php', 'index.php', 'dashboard.php', 'admin.php'] as $f) {
     row(is_file(__DIR__ . '/' . $f), "File: $f");
 }
 row(is_writable(__DIR__), 'Website folder writable', 'needed for settings files');
