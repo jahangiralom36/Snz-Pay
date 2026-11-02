@@ -136,6 +136,7 @@ public final class SyncManager {
                 reason = "Secret token does not match the server (APP_SECRET_TOKEN in config.php)";
             } else if (res.code == 403) {
                 reason = "License key invalid or expired — login again with an active key";
+                if (AppConfig.verifyKeyNow(ctx) == AppConfig.KEY_INVALID) AppConfig.forceLogout(ctx);
             } else if (res.code == 404) {
                 reason = "api/app_gateway.php not found on the server";
             } else if (res.code >= 500) {

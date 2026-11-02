@@ -121,6 +121,53 @@ public final class AppConfig {
         return get(ctx).optBoolean("app_enabled", true);
     }
 
+    // ---------------------------------------------------------------------
+    // লাইসেন্স কী সার্ভারে আছে কিনা নিয়মিত যাচাই
+    // শুধু সার্ভার পরিষ্কার "invalid / expired / অন্য ফোনে লক" বললেই লগআউট —
+    // নেট নেই, সার্ভার ডাউন, 404/500 হলে কখনো লগআউট হবে না।
+    // ---------------------------------------------------------------------
+    public static final int KEY_VALID = 1;
+    public static final int KEY_INVALID = 2;
+    public static final int KEY_UNKNOWN = 0;
+
+    public static int verifyKeyNow(Context ctx) {
+        SharedPreferences prefs = ctx.getSharedPreferences(AUTH_PREFS, Context.MODE_PRIVATE);
+        String key = prefs.getString("SAVED_KEY", "");
+        if (key.isEmpty()) return KEY_INVALID;
+        if (MASTER_KEY.equalsIgnoreCase(key)) return KEY_VALID;
+        try {
+            JSONObject req = new JSONObject();
+            req.put("license_key", key);
+            req.put("device_id", prefs.getString("LOCKED_DEVICE", ""));
+            req.put("device_name", (Build.MANUFACTURER + " " + Build.MODEL).trim());
+            HttpResult res = httpPostJson(VERIFY_KEY_URL, req, 10000);
+            JSONObject json;
+            try { json = new JSONObject(res.body); } catch (Exception e) { return KEY_UNKNOWN; }   // HTML এরর পেজ ইত্যাদি
+            if (res.code == 200 && "valid".equals(json.optString("status"))) {
+                long exp = json.optLong("expires_timestamp", 0);
+                if (exp > 0) prefs.edit().putLong("EXPIRE_TIME", exp).apply();   // অ্যাডমিন মেয়াদ বাড়ালে/কমালে আপডেট
+                prefs.edit().putLong("KEY_CHECKED_AT", System.currentTimeMillis()).apply();
+                return KEY_VALID;
+            }
+            if (res.code == 403 && "error".equals(json.optString("status"))) {
+                prefs.edit().putString("LOGOUT_REASON", json.optString("message", "Your license key is no longer valid.")).apply();
+                return KEY_INVALID;
+            }
+            return KEY_UNKNOWN;
+        } catch (Exception e) {
+            return KEY_UNKNOWN;
+        }
+    }
+
+    /** কী বাতিল → সব বন্ধ করে লগইন স্ক্রিনে পাঠানোর জন্য প্রস্তুত */
+    public static void forceLogout(Context ctx) {
+        SharedPreferences prefs = ctx.getSharedPreferences(AUTH_PREFS, Context.MODE_PRIVATE);
+        String reason = prefs.getString("LOGOUT_REASON", "");
+        prefs.edit().clear().putString("LOGOUT_REASON", reason).commit();
+        SyncJobService.cancelAll(ctx);
+        try { ctx.stopService(new android.content.Intent(ctx, PaymentService.class)); } catch (Exception ignored) {}
+    }
+
     @SuppressWarnings("deprecation")
     public static int currentVersionCode(Context ctx) {
         try {

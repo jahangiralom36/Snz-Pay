@@ -34,6 +34,7 @@ public class PaymentService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ConnectivityManager.NetworkCallback networkCallback;
     private long lastInboxScan = 0;
+    private long lastKeyCheck = 0;
 
     private final Runnable periodicTask = new Runnable() {
         @Override
@@ -47,6 +48,15 @@ public class PaymentService extends Service {
                         SyncManager.scanInbox(app);
                     }
                     SyncManager.syncPending(app);
+                    // প্রতি ৩০ মিনিটে কী সার্ভারে আছে কিনা
+                    if (SystemClock.elapsedRealtime() - lastKeyCheck > 30 * 60 * 1000L) {
+                        lastKeyCheck = SystemClock.elapsedRealtime();
+                        if (AppConfig.verifyKeyNow(app) == AppConfig.KEY_INVALID) {
+                            AppConfig.forceLogout(app);
+                            handler.post(() -> stopSelf());
+                            return;
+                        }
+                    }
                     handler.post(() -> showNotification());
                 } catch (Exception ignored) {}
             }).start();

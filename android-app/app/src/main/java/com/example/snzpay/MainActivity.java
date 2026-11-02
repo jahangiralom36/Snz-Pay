@@ -342,9 +342,7 @@ public class MainActivity extends Activity {
 
     private void performLogout() {
         // আগে লগইন তথ্য মোছা, তারপর সার্ভিস বন্ধ — না হলে সার্ভিস নিজেকে আবার চালু করে ফেলত
-        getSharedPreferences(AppConfig.AUTH_PREFS, MODE_PRIVATE).edit().clear().commit();
-        SyncJobService.cancelAll(this);
-        stopService(new Intent(this, PaymentService.class));
+        AppConfig.forceLogout(this);
 
         Intent intent = new Intent(this, LoginActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
@@ -376,6 +374,33 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             SyncManager.scanInbox(app);
             SyncManager.syncPending(app);
+        }).start();
+        checkKeyOnServer();
+    }
+
+    private long lastKeyCheck = 0;
+
+    /** কী ডাটাবেজে না থাকলে / মেয়াদ শেষ / অন্য ফোনে লক → লগআউট */
+    private void checkKeyOnServer() {
+        if (System.currentTimeMillis() - lastKeyCheck < 2 * 60 * 1000L) return;
+        lastKeyCheck = System.currentTimeMillis();
+        final Context app = getApplicationContext();
+        new Thread(() -> {
+            int r = AppConfig.verifyKeyNow(app);
+            if (r == AppConfig.KEY_INVALID) {
+                runOnUiThread(() -> {
+                    if (isFinishing()) return;
+                    String reason = getSharedPreferences(AppConfig.AUTH_PREFS, MODE_PRIVATE).getString("LOGOUT_REASON", "");
+                    new PremiumDialog(this)
+                            .icon("🔑", PremiumDialog.RED)
+                            .badge("LICENSE NOT VALID")
+                            .title("Please login again")
+                            .message(reason.isEmpty() ? "Your license key is no longer valid on the server." : reason)
+                            .primary("LOGIN AGAIN", d -> performLogout())
+                            .cancelable(false)
+                            .show();
+                });
+            }
         }).start();
     }
 

@@ -42,6 +42,19 @@ public class LoginActivity extends Activity {
         applyBranding();
         applyEntranceAnimations();
 
+        // কেন লগআউট হয়েছিল (কী ডিলিট / মেয়াদ শেষ ইত্যাদি)
+        String why = prefs.getString("LOGOUT_REASON", "");
+        if (!why.isEmpty()) {
+            prefs.edit().remove("LOGOUT_REASON").apply();
+            new PremiumDialog(this)
+                    .icon("🔑", PremiumDialog.AMBER)
+                    .badge("LOGGED OUT")
+                    .title("License key not valid")
+                    .message(why)
+                    .primary("OK", null)
+                    .show();
+        }
+
         // ওয়েবসাইট থেকে নাম/লোগো/On-Off/আপডেট তথ্য আনা
         AppConfig.fetchAsync(this, () -> {
             if (isFinishing()) return;
