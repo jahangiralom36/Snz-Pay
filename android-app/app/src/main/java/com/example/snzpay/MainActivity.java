@@ -384,18 +384,18 @@ public class MainActivity extends Activity {
     private long lastKeyCheck = 0;
     private boolean logoutShown = false;
     private final android.os.Handler keyHandler = new android.os.Handler(android.os.Looper.getMainLooper());
-    // অ্যাপ স্ক্রিনে খোলা থাকলে প্রতি ১০ সেকেন্ডে সার্ভারে কী চেক
+    // অ্যাপ স্ক্রিনে খোলা থাকলে প্রতি ৩০ সেকেন্ডে সার্ভারে কী চেক (খুব ঘন ঘন হলে হোস্টিং ফায়ারওয়াল ফোন ব্লক করে)
     private final Runnable keyLoop = new Runnable() {
         @Override
         public void run() {
             checkKeyOnServer();
-            keyHandler.postDelayed(this, 10 * 1000L);
+            keyHandler.postDelayed(this, 30 * 1000L);
         }
     };
 
     /** কী ডাটাবেজে না থাকলে / Ban / মেয়াদ শেষ / অন্য ফোনে লক → সাথে সাথে লগআউট */
     private void checkKeyOnServer() {
-        if (logoutShown || System.currentTimeMillis() - lastKeyCheck < 8 * 1000L) return;
+        if (logoutShown || System.currentTimeMillis() - lastKeyCheck < 25 * 1000L || AppConfig.firewallWaitSec() > 0) return;
         lastKeyCheck = System.currentTimeMillis();
         final Context app = getApplicationContext();
         new Thread(() -> {

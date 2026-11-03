@@ -69,6 +69,11 @@ public final class SyncManager {
                 return db.getUnsyncedCount();
             }
 
+            if (AppConfig.firewallWaitSec() > 0) {   // ফায়ারওয়াল আটকেছে → একটু পরে
+                setLastError(ctx, AppConfig.fwInfo + " is blocking the app — retrying in " + (AppConfig.firewallWaitSec() / 60 + 1) + " min");
+                return db.getUnsyncedCount();
+            }
+
             boolean changed = false;
             for (int round = 0; round < 10; round++) {
                 List<DatabaseHelper.Tx> batch = db.getUnsynced(25);
@@ -141,6 +146,8 @@ public final class SyncManager {
                 if (AppConfig.verifyKeyNow(ctx) == AppConfig.KEY_INVALID) AppConfig.forceLogout(ctx);
             } else if (res.code == 404) {
                 reason = "HTTP 404 from server IP " + AppConfig.resolvedIps() + " — phone may still use the old hosting (DNS). Set Private DNS to dns.google";
+            } else if (AppConfig.looksFirewall(res)) {
+                reason = AppConfig.firewallName(res.body) + " (HTTP " + res.code + ") on the hosting blocked the app. Ask hosting to whitelist /api/ — " + AppConfig.bodySnippet(res.body);
             } else if (res.code >= 500) {
                 reason = "Server error (HTTP " + res.code + ")" + (serverMsg.isEmpty() ? "" : ": " + serverMsg);
             } else {

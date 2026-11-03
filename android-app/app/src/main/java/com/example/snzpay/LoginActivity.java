@@ -121,7 +121,7 @@ public class LoginActivity extends Activity {
                 req.put("device_id", deviceId);
                 req.put("device_name", deviceName());   // ওয়েবসাইটে কোন ফোনে কানেক্ট আছে দেখাবে
 
-                AppConfig.HttpResult res = AppConfig.httpPostJson(AppConfig.VERIFY_KEY_URL, req, 10000);
+                AppConfig.HttpResult res = AppConfig.httpPostJson(AppConfig.VERIFY_KEY_URL, req, 10000, true);
                 if (res.code == 200) {
                     JSONObject resObj = new JSONObject(res.body);
                     if (!"valid".equals(resObj.optString("status"))) throw new IllegalStateException("invalid");
@@ -138,11 +138,13 @@ public class LoginActivity extends Activity {
                         msg = new JSONObject(res.body).optString("message", "Key is invalid or expired on server.");
                     } else {
                         // সার্ভার আমাদের API এর উত্তর দেয়নি → আসল কারণ দেখানো
+                        String snip = AppConfig.bodySnippet(res.body);
                         msg = "Server problem (HTTP " + res.code + "). The phone is connecting to server IP "
                                 + AppConfig.resolvedIps() + ". "
                                 + (res.code == 404 ? "If this is not your new hosting's IP (see check.php), the phone still uses the old DNS — set Private DNS to dns.google or wait for DNS to update."
-                                : res.code == 403 ? "The hosting firewall is blocking the app."
-                                : "The server did not return a valid answer.");
+                                : AppConfig.looksFirewall(res) ? AppConfig.firewallName(res.body) + " on the hosting is blocking this phone. Ask hosting support to whitelist the /api/ folder (or turn off ModSecurity), then try again in 2-3 minutes. Switching Wi-Fi ↔ mobile data also helps."
+                                : "The server did not return a valid answer.")
+                                + (snip.isEmpty() ? "" : "\n\nServer said: " + snip);
                     }
                     final String finalMsg = msg;
                     ErrorReporter.report(this, "Login failed (HTTP " + res.code + ")", msg,

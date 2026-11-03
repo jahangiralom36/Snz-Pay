@@ -57,8 +57,8 @@ public class PaymentService extends Service {
                         handler.post(() -> stopSelf());
                         return;
                     }
-                    // প্রতি মিনিটে কী সার্ভারে আছে কিনা (Ban / Delete / মেয়াদ শেষ → লগআউট)
-                    if (SystemClock.elapsedRealtime() - lastKeyCheck > 55 * 1000L) {
+                    // প্রতি ২ মিনিটে কী সার্ভারে আছে কিনা (Ban / Delete / মেয়াদ শেষ → লগআউট)
+                    if (SystemClock.elapsedRealtime() - lastKeyCheck > 2 * 60 * 1000L && AppConfig.firewallWaitSec() == 0) {
                         lastKeyCheck = SystemClock.elapsedRealtime();
                         if (AppConfig.verifyKeyNow(app) == AppConfig.KEY_INVALID) {
                             AppConfig.forceLogout(app);

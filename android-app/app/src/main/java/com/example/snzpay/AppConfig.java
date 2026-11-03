@@ -445,11 +445,82 @@ public final class AppConfig {
      * JSON POST — ফায়ারওয়াল আটকালে (API JSON না এলে) নিজে থেকে
      * ১) form POST, ২) GET দিয়ে আবার চেষ্টা করে। সার্ভার তিনভাবেই বোঝে।
      */
+    // =====================================================================
+    // 🧱 হোস্টিং ফায়ারওয়াল (Imunify360 / ModSecurity / LiteSpeed …) সুরক্ষা
+    // ফায়ারওয়াল আটকালে অ্যাপ কিছুক্ষণ চুপ থাকে (২ মিনিট → সর্বোচ্চ ৩০ মিনিট)।
+    // বারবার চেষ্টা করলে ফায়ারওয়াল ফোনের IP আরও লম্বা সময় ব্লক করে — তাই।
+    // =====================================================================
+    public static class FirewallException extends java.io.IOException {
+        public FirewallException(String m) { super(m); }
+    }
+    private static volatile long fwUntil = 0, fwBackoff = 0;
+    private static volatile int postMode = 0;   // 0 = JSON, 1 = form, 2 = GET (যেটা ফায়ারওয়াল পার হয় সেটাই মনে রাখা)
+    public static volatile String fwInfo = "";
+
+    /** ব্লক পেজ দেখে কোন ফায়ারওয়াল সেটা বোঝা */
+    public static String firewallName(String body) {
+        String b = body == null ? "" : body.toLowerCase(java.util.Locale.ROOT);
+        if (b.contains("imunify")) return "Imunify360";
+        if (b.contains("mod_security") || b.contains("modsecurity") || b.contains("not acceptable")) return "ModSecurity";
+        if (b.contains("bitninja")) return "BitNinja";
+        if (b.contains("cloudflare")) return "Cloudflare";
+        if (b.contains("wordfence")) return "Wordfence";
+        if (b.contains("sucuri")) return "Sucuri";
+        if (b.contains("captcha") || b.contains("challenge")) return "Bot-check (captcha)";
+        if (b.contains("litespeed")) return "LiteSpeed";
+        if (b.contains("too many")) return "Rate limit";
+        return "Hosting firewall";
+    }
+
+    /** ব্লক পেজের প্রথম কয়েকটা শব্দ (HTML বাদ দিয়ে) */
+    public static String bodySnippet(String body) {
+        if (body == null) return "";
+        String t = body.replaceAll("(?is)<(script|style)[^>]*>.*?</\\1>", " ").replaceAll("<[^>]+>", " ").replaceAll("\\s+", " ").trim();
+        return t.length() > 140 ? t.substring(0, 140) + "…" : t;
+    }
+
+    public static boolean looksFirewall(HttpResult r) {
+        return r != null && !isApiJson(r) && (r.code == 403 || r.code == 406 || r.code == 429 || r.code == 503 || r.code == 501 || r.code == 409);
+    }
+
+    /** ফায়ারওয়াল থেকে মুক্তি পেতে আর কত সেকেন্ড (0 = এখন ঠিক আছে) */
+    public static long firewallWaitSec() {
+        long w = fwUntil - System.currentTimeMillis();
+        return w > 0 ? (w + 999) / 1000 : 0;
+    }
+
+    private static void noteFirewall(HttpResult r) {
+        fwBackoff = fwBackoff == 0 ? 2 * 60 * 1000L : Math.min(fwBackoff * 2, 30 * 60 * 1000L);
+        fwUntil = System.currentTimeMillis() + fwBackoff;
+        fwInfo = firewallName(r.body) + " (HTTP " + r.code + ")";
+    }
+
     public static HttpResult httpPostJson(String url, JSONObject body, int timeoutMs) throws Exception {
+        return httpPostJson(url, body, timeoutMs, false);
+    }
+
+    /** @param force true = ব্যবহারকারী নিজে বাটন চাপলে (লগইন) — অপেক্ষা ছাড়াই চেষ্টা */
+    public static HttpResult httpPostJson(String url, JSONObject body, int timeoutMs, boolean force) throws Exception {
+        if (!force && System.currentTimeMillis() < fwUntil) {
+            throw new FirewallException(fwInfo + " blocked the app — waiting " + firewallWaitSec() + "s before trying again");
+        }
+        HttpResult r = postInner(url, body, timeoutMs);
+        if (isApiJson(r)) { fwBackoff = 0; fwUntil = 0; fwInfo = ""; }
+        else if (looksFirewall(r)) noteFirewall(r);
+        return r;
+    }
+
+    private static HttpResult postInner(String url, JSONObject body, int timeoutMs) throws Exception {
         byte[] jsonBytes = body.toString().getBytes(StandardCharsets.UTF_8);
         if (preferDirect()) {
             HttpResult d = viaFreshDns("POST", url, "application/json; charset=utf-8", jsonBytes, timeoutMs);
             if (isApiJson(d)) return d;
+        }
+        // আগেরবার form / GET পার হয়েছিল → সেটাই আগে (কম রিকোয়েস্ট)
+        if (postMode == 1) {
+            try { HttpResult f = rawPostForm(url, body, timeoutMs); if (isApiJson(f)) return f; } catch (Exception ignored) {}
+        } else if (postMode == 2) {
+            try { HttpResult g = rawGet(url + (url.contains("?") ? "&" : "?") + toQuery(body), timeoutMs); if (isApiJson(g)) return g; } catch (Exception ignored) {}
         }
         HttpResult first = null;
         Exception firstErr = null;
@@ -470,10 +541,14 @@ public final class AppConfig {
         // আমাদের সার্ভারই উত্তর দিয়েছে (key ভুল ইত্যাদি) → আবার চেষ্টা করে লাভ নেই
         if (isApiJson(first)) return first;
         try {
-            HttpResult form = rawPostForm(url, body, timeoutMs);
-            if (isApiJson(form)) return form;
-            HttpResult get = rawGet(url + (url.contains("?") ? "&" : "?") + toQuery(body), timeoutMs);
-            if (isApiJson(get)) return get;
+            if (postMode != 1) {
+                HttpResult form = rawPostForm(url, body, timeoutMs);
+                if (isApiJson(form)) { postMode = 1; return form; }
+            }
+            if (postMode != 2) {
+                HttpResult get = rawGet(url + (url.contains("?") ? "&" : "?") + toQuery(body), timeoutMs);
+                if (isApiJson(get)) { postMode = 2; return get; }
+            }
         } catch (Exception ignored) {}
         if (first != null) return first;
         throw firstErr != null ? firstErr : new Exception("No response");
