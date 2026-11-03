@@ -199,6 +199,7 @@ public final class AppConfig {
     public static final class HttpResult {
         public final int code;
         public final String body;
+        public boolean enc;   // সার্ভার এনকোড করা ডাটা বুঝেছে (X-SNZ-Enc হেডার)
         HttpResult(int code, String body) { this.code = code; this.body = body; }
     }
 
@@ -209,7 +210,36 @@ public final class AppConfig {
         conn.setRequestProperty("User-Agent", USER_AGENT);
         conn.setRequestProperty("Accept", "application/json, text/plain, */*");
         conn.setRequestProperty("X-Requested-With", "com.example.snzpay");
+        // "Unblock" স্ক্রিনে ফায়ারওয়ালের যাচাই পার হলে তার কুকি সাথে পাঠানো
+        try {
+            String ck = android.webkit.CookieManager.getInstance().getCookie(BASE_URL);
+            if (ck != null && !ck.isEmpty()) conn.setRequestProperty("Cookie", ck);
+        } catch (Throwable ignored) {}
     }
+
+    /** firewall-এ ধরা না পড়ার জন্য: পুরো ডাটা একটা ফিল্ডে এনকোড করে (p=...) */
+    private static HttpResult rawPostEncoded(String url, JSONObject body, int timeoutMs) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setRequestMethod("POST");
+        commonHeaders(conn);
+        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=utf-8");
+        conn.setDoOutput(true);
+        conn.setConnectTimeout(timeoutMs);
+        conn.setReadTimeout(timeoutMs);
+        conn.setUseCaches(false);
+        String enc = android.util.Base64.encodeToString(body.toString().getBytes(StandardCharsets.UTF_8),
+                android.util.Base64.URL_SAFE | android.util.Base64.NO_WRAP | android.util.Base64.NO_PADDING);
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(("p=" + enc).getBytes(StandardCharsets.UTF_8));
+        }
+        int code = conn.getResponseCode();
+        HttpResult r = new HttpResult(code, readBody(conn, code));
+        r.enc = conn.getHeaderField("X-SNZ-Enc") != null;
+        return r;
+    }
+
+    /** ফায়ারওয়াল যাচাই পার হলে (Unblock স্ক্রিন) সাথে সাথে আবার চেষ্টা */
+    public static void clearFirewall() { fwUntil = 0; fwBackoff = 0; fwInfo = ""; }
 
     public static HttpResult httpGet(String url, int timeoutMs) throws Exception {
         if (preferDirect()) {
@@ -234,11 +264,9 @@ public final class AppConfig {
         conn.setConnectTimeout(timeoutMs);
         conn.setReadTimeout(timeoutMs);
         conn.setUseCaches(false);
-        try {
+        {
             int code = conn.getResponseCode();
             return new HttpResult(code, readBody(conn, code));
-        } finally {
-            conn.disconnect();
         }
     }
 
@@ -454,7 +482,7 @@ public final class AppConfig {
         public FirewallException(String m) { super(m); }
     }
     private static volatile long fwUntil = 0, fwBackoff = 0;
-    private static volatile int postMode = 0;   // 0 = JSON, 1 = form, 2 = GET (যেটা ফায়ারওয়াল পার হয় সেটাই মনে রাখা)
+    private static volatile int postMode = 0;   // 0 = এনকোড, 1 = JSON, 2 = form, 3 = GET (যেটা ফায়ারওয়াল পার হয় সেটাই মনে রাখা)
     public static volatile String fwInfo = "";
 
     /** ব্লক পেজ দেখে কোন ফায়ারওয়াল সেটা বোঝা */
@@ -510,46 +538,69 @@ public final class AppConfig {
         return r;
     }
 
+    private static volatile boolean encUnsupported = false;   // পুরনো সার্ভার ফাইল হলে এনকোড বাদ
+
+    private static HttpResult send(int mode, String url, JSONObject body, int t) throws Exception {
+        switch (mode) {
+            case 0: return rawPostEncoded(url, body, t);
+            case 1: return rawPostJson(url, body, t);
+            case 2: return rawPostForm(url, body, t);
+            default: return rawGet(url + (url.contains("?") ? "&" : "?") + toQuery(body), t);
+        }
+    }
+
+    /**
+     * রিকোয়েস্ট পাঠানো — যে পদ্ধতি ফায়ারওয়াল পার হয় সেটা আগে, বাকিগুলো দরকার হলে।
+     * 0 = এনকোড (সবচেয়ে নিরাপদ), 1 = JSON, 2 = form, 3 = GET
+     */
     private static HttpResult postInner(String url, JSONObject body, int timeoutMs) throws Exception {
         byte[] jsonBytes = body.toString().getBytes(StandardCharsets.UTF_8);
         if (preferDirect()) {
             HttpResult d = viaFreshDns("POST", url, "application/json; charset=utf-8", jsonBytes, timeoutMs);
             if (isApiJson(d)) return d;
         }
-        // আগেরবার form / GET পার হয়েছিল → সেটাই আগে (কম রিকোয়েস্ট)
-        if (postMode == 1) {
-            try { HttpResult f = rawPostForm(url, body, timeoutMs); if (isApiJson(f)) return f; } catch (Exception ignored) {}
-        } else if (postMode == 2) {
-            try { HttpResult g = rawGet(url + (url.contains("?") ? "&" : "?") + toQuery(body), timeoutMs); if (isApiJson(g)) return g; } catch (Exception ignored) {}
-        }
+        java.util.List<Integer> order = new java.util.ArrayList<>();
+        order.add(postMode);
+        for (int m = 0; m < 4; m++) if (m != postMode) order.add(m);
+        if (encUnsupported) order.remove(Integer.valueOf(0));
+
         HttpResult first = null;
         Exception firstErr = null;
-        boolean netDown = false;
-        try {
-            first = rawPostJson(url, body, timeoutMs);
-            if (isApiJson(first) && first.code == 200) return first;
-        } catch (java.net.UnknownHostException | java.net.SocketTimeoutException e) {
-            firstErr = e;
-            netDown = true;
-        } catch (Exception e) {
-            firstErr = e;
+        boolean dnsTried = false;
+        for (int mode : order) {
+            HttpResult r;
+            try {
+                r = send(mode, url, body, timeoutMs);
+            } catch (java.net.UnknownHostException | java.net.SocketTimeoutException e) {
+                // নেট নেই / সার্ভার সাড়া দেয় না → পুরনো DNS হলে নতুন IP তে একবার
+                HttpResult d = dnsTried ? null : viaFreshDns("POST", url, "application/json; charset=utf-8", jsonBytes, timeoutMs);
+                if (isApiJson(d)) return d;
+                throw e;
+            } catch (Exception e) {
+                if (firstErr == null) firstErr = e;
+                continue;
+            }
+            if (isApiJson(r)) {
+                // পুরনো সার্ভার ফাইল এনকোড বোঝে না → JSON দিয়ে আবার
+                if (mode == 0 && !r.enc && r.code >= 400) { encUnsupported = true; if (first == null) first = r; continue; }
+                if (r.code == 200) { postMode = mode; return r; }
+                // আমাদের সার্ভারের "না" (কী ভুল ইত্যাদি) — তবে পুরনো হোস্টিং এর উত্তর কিনা একবার দেখা
+                if (!dnsTried) {
+                    dnsTried = true;
+                    HttpResult d = viaFreshDns("POST", url, "application/json; charset=utf-8", jsonBytes, timeoutMs);
+                    if (isApiJson(d)) return d;
+                }
+                postMode = mode;
+                return r;
+            }
+            if (first == null || (first.code != 403 && r.code == 403)) first = r;
+            if (!dnsTried) {
+                dnsTried = true;
+                HttpResult d = viaFreshDns("POST", url, "application/json; charset=utf-8", jsonBytes, timeoutMs);
+                if (isApiJson(d)) return d;
+            }
+            if (r.code == 404) break;   // ভুল সার্ভার — অন্য পদ্ধতিতেও 404 আসবে
         }
-        // ফোনের অপারেটর পুরনো হোস্টিং এর IP দিচ্ছে → Google/Cloudflare থেকে আসল IP নিয়ে সরাসরি
-        HttpResult d = viaFreshDns("POST", url, "application/json; charset=utf-8", jsonBytes, timeoutMs);
-        if (isApiJson(d)) return d;
-        if (netDown) throw firstErr;   // নেট/টাইমআউট — আবার চেষ্টা করে লাভ নেই
-        // আমাদের সার্ভারই উত্তর দিয়েছে (key ভুল ইত্যাদি) → আবার চেষ্টা করে লাভ নেই
-        if (isApiJson(first)) return first;
-        try {
-            if (postMode != 1) {
-                HttpResult form = rawPostForm(url, body, timeoutMs);
-                if (isApiJson(form)) { postMode = 1; return form; }
-            }
-            if (postMode != 2) {
-                HttpResult get = rawGet(url + (url.contains("?") ? "&" : "?") + toQuery(body), timeoutMs);
-                if (isApiJson(get)) { postMode = 2; return get; }
-            }
-        } catch (Exception ignored) {}
         if (first != null) return first;
         throw firstErr != null ? firstErr : new Exception("No response");
     }
@@ -575,14 +626,12 @@ public final class AppConfig {
         conn.setConnectTimeout(timeoutMs);
         conn.setReadTimeout(timeoutMs);
         conn.setUseCaches(false);
-        try {
+        {
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(toQuery(body).getBytes(StandardCharsets.UTF_8));
             }
             int code = conn.getResponseCode();
             return new HttpResult(code, readBody(conn, code));
-        } finally {
-            conn.disconnect();
         }
     }
 
@@ -595,14 +644,12 @@ public final class AppConfig {
         conn.setConnectTimeout(timeoutMs);
         conn.setReadTimeout(timeoutMs);
         conn.setUseCaches(false);
-        try {
+        {
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }
             int code = conn.getResponseCode();
             return new HttpResult(code, readBody(conn, code));
-        } finally {
-            conn.disconnect();
         }
     }
 

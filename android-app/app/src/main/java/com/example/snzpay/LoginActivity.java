@@ -149,8 +149,11 @@ public class LoginActivity extends Activity {
                     final String finalMsg = msg;
                     ErrorReporter.report(this, "Login failed (HTTP " + res.code + ")", msg,
                             "Key: " + key + "\nServer IP seen by phone: " + AppConfig.resolvedIps());
+                    final boolean fw = !AppConfig.isApiJson(res) && AppConfig.looksFirewall(res);
+                    final String fwName = AppConfig.firewallName(res.body);
                     runOnUiThread(() -> {
                         resetButton();
+                        if (fw) { showFirewallPopup(fwName, res.code); return; }
                         showThreeSecondPopup(finalMsg.startsWith("Server problem") ? "SERVER ERROR" : "AUTH FAILED", finalMsg);
                     });
                 }
@@ -163,6 +166,19 @@ public class LoginActivity extends Activity {
                 });
             }
         }).start();
+    }
+
+    /** 🧱 হোস্টিং ফায়ারওয়াল আটকালে — এক চাপে "Unblock" (অ্যাপের ভেতরেই যাচাই) */
+    private void showFirewallPopup(String fwName, int code) {
+        if (isFinishing()) return;
+        new PremiumDialog(this)
+                .icon("🛡️", PremiumDialog.AMBER)
+                .badge("CONNECTION BLOCKED")
+                .title("Security check needed")
+                .message("The hosting security (" + fwName + ", HTTP " + code + ") stopped the app. Tap UNBLOCK — a page opens; if it asks “I'm not a robot”, complete it. Then login again.")
+                .primary("UNBLOCK NOW", d -> startActivity(new Intent(this, UnblockActivity.class)))
+                .secondary("CLOSE", null)
+                .show();
     }
 
     /** যেমন "Samsung SM-A515F" */

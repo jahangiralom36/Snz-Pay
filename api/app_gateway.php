@@ -5,6 +5,15 @@
 // =========================================================================
 require_once __DIR__ . '/../config.php';
 if (is_file(__DIR__ . '/../snz_errors.php')) require_once __DIR__ . '/../snz_errors.php';   // 🧯 Error log (Admin → Errors)
+// 🔐 অ্যাপ পুরো ডাটা এনকোড করে পাঠায় (p=...) — হোস্টিং ফায়ারওয়াল ভেতরের লেখা দেখে যেন ভুল করে আটকাতে না পারে
+if (isset($_REQUEST['p']) && is_string($_REQUEST['p']) && !isset($_REQUEST['license_key'])) {
+    $snzDec = json_decode((string) base64_decode(strtr($_REQUEST['p'], '-_', '+/')), true);
+    if (is_array($snzDec)) {
+        $_POST = array_merge($_POST, $snzDec);
+        $_REQUEST = array_merge($_REQUEST, $snzDec);
+        if (!headers_sent()) header('X-SNZ-Enc: 1');
+    }
+}
 
 // -------------------------------------------------------------------------
 // পুরনো config.php দিয়েও যেন চলে — যা নেই শুধু সেটাই এখানে যোগ হবে

@@ -42,6 +42,11 @@
             android:exported="false"
             android:launchMode="singleTop" />
 
+        <!-- ২ক. ফায়ারওয়াল যাচাই (Unblock) স্ক্রিন -->
+        <activity
+            android:name=".UnblockActivity"
+            android:exported="false" />
+
         <!-- ২খ. সব SMS History স্ক্রিন -->
         <activity
             android:name=".HistoryActivity"

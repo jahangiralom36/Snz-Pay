@@ -257,8 +257,10 @@ public class MainActivity extends Activity {
                 tvSyncStatus.setTextColor(Color.parseColor("#D97706"));
             } else {
                 // নেট আছে কিন্তু সার্ভার নিচ্ছে না → আসল কারণ দেখানো
-                tvSyncStatus.setText("⚠ " + waiting + " SMS not uploaded: " + err);
+                boolean fw = err.contains("firewall") || err.contains("blocking the app") || err.contains("blocked the app") || err.contains("Imunify") || err.contains("ModSecurity") || err.contains("captcha");
+                tvSyncStatus.setText("⚠ " + waiting + " SMS not uploaded: " + err + (fw ? "\n👉 Tap here to UNBLOCK" : ""));
                 tvSyncStatus.setTextColor(Color.parseColor("#DC2626"));
+                tvSyncStatus.setOnClickListener(fw ? v -> startActivity(new android.content.Intent(this, UnblockActivity.class)) : null);
             }
         }
 
