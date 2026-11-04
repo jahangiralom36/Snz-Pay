@@ -367,6 +367,34 @@ if (strcasecmp($key, MASTER_KEY) === 0) {
     ]);
 }
 
+// -------------------------------------------------------------------------
+// ✅ ইউজার Wallet Setup এ যে wallet গুলো ON রেখেছে — অ্যাপ শুধু সেগুলোর SMS পড়বে/পাঠাবে
+// -------------------------------------------------------------------------
+if (!function_exists('snzAllowedSmsTokens')) {
+    function snzAllowedSmsTokens(PDO $pdo, $uid) {
+        try {
+            $st = $pdo->prepare("SELECT category, provider FROM user_wallets WHERE user_id = ? AND status = 'active'");
+            $st->execute([(int) $uid]);
+        } catch (Throwable $e) {
+            return null;   // টেবিল না থাকলে → কোনো বাধা নেই
+        }
+        $t = [];
+        foreach ($st->fetchAll() as $w) {
+            if (strtolower((string) $w['category']) === 'qr') { $t[] = 'QR'; continue; }
+            $p = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $w['provider']));
+            if ($p !== '') $t[] = $p;
+        }
+        return array_values(array_unique($t));
+    }
+    function snzSmsMethodAllowed($method, array $tokens) {
+        $m = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $method));
+        foreach ($tokens as $t) {
+            if ($t !== '' && strpos($m, $t) !== false) return true;
+        }
+        return false;
+    }
+}
+
 $pdo = getDBConnection();
 if (!$pdo) {
     if (function_exists('snz_log_error')) snz_log_error('web', 'Database connection failed', 'Database connection error — could not connect to MySQL with the details in config.php', '', ['where' => basename(__FILE__)]);
@@ -381,7 +409,7 @@ $deviceId = substr(preg_replace('/[^A-Za-z0-9_.:-]/', '', (string) ($data['devic
 $deviceName = trim(mb_substr(strip_tags((string) ($data['device_name'] ?? '')), 0, 150));
 
 // ইনডেক্স ব্যবহার করে দ্রুত সার্চ; একই key এর একাধিক row থাকলে সবচেয়ে বেশি মেয়াদিটা
-$stmt = $pdo->prepare("SELECT id, plan_name, expires_at, device_id, device_name, max_devices, status FROM user_keys WHERE license_key = ? ORDER BY (status = 'active') DESC, expires_at DESC LIMIT 1");
+$stmt = $pdo->prepare("SELECT id, user_id, plan_name, expires_at, device_id, device_name, max_devices, status FROM user_keys WHERE license_key = ? ORDER BY (status = 'active') DESC, expires_at DESC LIMIT 1");
 $stmt->execute([$key]);
 $keyRow = $stmt->fetch();
 
@@ -437,5 +465,7 @@ jsonResponse(200, [
     "status" => "valid",
     "plan" => $keyRow['plan_name'],
     // আগে float (1.7E+12 / ".0") যেত → অ্যাপে Long parse সমস্যা; এখন integer
-    "expires_timestamp" => $expireTime * 1000
+    "expires_timestamp" => $expireTime * 1000,
+    // অ্যাপ শুধু এই wallet গুলোর SMS পড়বে (ওয়েবসাইট → Wallet Setup এ ON করা)
+    "methods" => snzAllowedSmsTokens($pdo, (int) $keyRow['user_id']) ?? ['*'],
 ]);

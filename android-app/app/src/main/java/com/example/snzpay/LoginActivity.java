@@ -125,6 +125,7 @@ public class LoginActivity extends Activity {
                 if (res.code == 200) {
                     JSONObject resObj = new JSONObject(res.body);
                     if (!"valid".equals(resObj.optString("status"))) throw new IllegalStateException("invalid");
+                    AppConfig.saveAllowedMethods(this, resObj);
                     long expireTime = resObj.optLong("expires_timestamp", 0);
                     if (expireTime <= 0) expireTime = System.currentTimeMillis() + (30L * 3600 * 1000);
                     final long finalExpireTime = expireTime;

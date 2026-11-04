@@ -164,6 +164,19 @@ if (empty($_SESSION['csrf'])) {
     $_SESSION['csrf'] = bin2hex(random_bytes(16));
 }
 $CSRF = $_SESSION['csrf'];
+// একবারের টোকেন: পেজ রিফ্রেশ / ডাবল ক্লিকে একই প্ল্যান দুইবার কেনা হবে না
+if (!isset($_SESSION['once']) || !is_array($_SESSION['once'])) $_SESSION['once'] = [];
+function snzOnce() {
+    $t = bin2hex(random_bytes(8));
+    $_SESSION['once'][$t] = time();
+    if (count($_SESSION['once']) > 40) $_SESSION['once'] = array_slice($_SESSION['once'], -40, null, true);
+    return $t;
+}
+function snzUseOnce($t) {
+    $t = (string) $t;
+    if ($t !== '' && isset($_SESSION['once'][$t])) { unset($_SESSION['once'][$t]); return true; }
+    return false;
+}
 
 // Live feed এর সময় session lock ছেড়ে দেওয়া — না হলে প্রতি ৩.৫ সেকেন্ডের AJAX পুরো সাইট আটকে রাখত (lag এর বড় কারণ)
 if (isset($_GET['ajax_live_feed'])) {
@@ -837,6 +850,11 @@ if (isset($_POST['action_add_fund'])) {
 // =========================================================================
 // 3. Buy Plan & Auto-Expiry Lifecycle
 // =========================================================================
+if (isset($_POST['action_buy_plan']) && empty($fundMsgBefore) && !snzUseOnce($_POST['once'] ?? '')) {
+    // একই ফর্ম আবার জমা পড়েছে (রিফ্রেশ / ডাবল ক্লিক) → দ্বিতীয়বার কেনা হবে না
+    unset($_POST['action_buy_plan']);
+    $activeTabTarget = "view-my-plan";
+}
 if (isset($_POST['action_buy_plan'])) {
     $activeTabTarget = "view-plans";
     $buyPlan = snzGetPlan($pdo, intval($_POST['plan_id'] ?? 0));
@@ -895,6 +913,10 @@ if (isset($_POST['action_buy_plan'])) {
     }
 }
 
+if (isset($_POST['action_manual_renew']) && !snzUseOnce($_POST['once'] ?? '')) {
+    unset($_POST['action_manual_renew']);
+    $activeTabTarget = "view-my-plan";
+}
 if (isset($_POST['action_manual_renew'])) {
     $activeTabTarget = "view-my-plan";
     $renewKeyId = intval($_POST['renew_key_id']);
@@ -2701,6 +2723,7 @@ try {
                                             <form method="POST" class="flex-1 md:flex-none">
                                 <input type="hidden" name="csrf" value="<?= $CSRF ?>">
                                                 <input type="hidden" name="action_manual_renew" value="1">
+                                                <input type="hidden" name="once" value="<?= snzOnce() ?>">
                                                 <input type="hidden" name="renew_key_id" value="<?= $k['id'] ?>">
                                                 <button type="submit" class="w-full h-full whitespace-nowrap snz-gradient text-[#061535] text-xs font-black px-4 py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 shadow-lg shadow-cyan-500/20">
                                                     <i class="fa-solid fa-arrows-rotate"></i> Renew (৳<?= $pDetails['price'] ?>)
@@ -2768,9 +2791,10 @@ try {
                                 </ul>
                             </div>
                             <?php $needPay = !$isTrial && (float) $user['balance'] + 0.0001 < $final; ?>
-                            <form method="POST" <?= $needPay ? 'onsubmit="startPlanPay(' . (int) $pl['id'] . ', ' . htmlspecialchars(json_encode((string) $pl['name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT), ENT_QUOTES) . ', ' . round($final, 2) . '); return false;"' : '' ?>>
+                            <form method="POST" <?= $needPay ? 'onsubmit="startPlanPay(' . (int) $pl['id'] . ', ' . htmlspecialchars(json_encode((string) $pl['name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT), ENT_QUOTES) . ', ' . round($final, 2) . '); return false;"' : 'onsubmit="this.querySelector(\'button\').disabled=true"' ?>>
                                 <input type="hidden" name="csrf" value="<?= $CSRF ?>">
                                 <input type="hidden" name="action_buy_plan" value="1">
+                                <input type="hidden" name="once" value="<?= snzOnce() ?>">
                                 <input type="hidden" name="plan_id" value="<?= (int) $pl['id'] ?>">
                                 <button type="submit" <?= $trialUsed ? 'disabled' : '' ?> class="w-full <?= $trialUsed ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'snz-gradient text-[#061535]' ?> font-black py-3 rounded-2xl text-xs transition">
                                     <?= $trialUsed ? 'Claimed (1-Time Only)' : ($isTrial ? 'Claim Free Trial' : ($needPay ? '⚡ Pay Now & Activate' : 'Purchase with Wallet')) ?>

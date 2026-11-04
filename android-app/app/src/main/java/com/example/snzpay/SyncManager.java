@@ -31,6 +31,8 @@ public final class SyncManager {
     public static boolean handleIncomingSms(Context ctx, String origin, String body, long smsTime) {
         SmsParser.Result r = SmsParser.parse(ctx, origin, body);
         if (r == null) return false;
+        // ওয়েবসাইটের Wallet Setup এ এই wallet ON না থাকলে পড়াই হবে না
+        if (!AppConfig.isMethodAllowed(ctx, r.method)) return false;
         long id = DatabaseHelper.get(ctx).insertIfNew(r.method, r.trxId, r.amount, r.customer, body, origin, smsTime);
         if (id > 0) notifyRefresh(ctx);
         return true;

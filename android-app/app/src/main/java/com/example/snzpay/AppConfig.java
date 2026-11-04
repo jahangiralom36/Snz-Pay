@@ -130,6 +130,41 @@ public final class AppConfig {
     public static final int KEY_INVALID = 2;
     public static final int KEY_UNKNOWN = 0;
 
+    // ---------------------------------------------------------------------
+    // ✅ ওয়েবসাইটের Wallet Setup এ ইউজার যে wallet ON রেখেছে — শুধু সেগুলোর SMS পড়া হবে
+    // ---------------------------------------------------------------------
+    public static void saveAllowedMethods(Context ctx, JSONObject verifyResponse) {
+        org.json.JSONArray a = verifyResponse == null ? null : verifyResponse.optJSONArray("methods");
+        if (a == null) return;   // পুরনো সার্ভার → কোনো বাধা নেই
+        ctx.getSharedPreferences(AUTH_PREFS, Context.MODE_PRIVATE).edit().putString("ALLOWED_METHODS", a.toString()).apply();
+    }
+
+    private static org.json.JSONArray allowedList(Context ctx) {
+        SharedPreferences p = ctx.getSharedPreferences(AUTH_PREFS, Context.MODE_PRIVATE);
+        if (MASTER_KEY.equalsIgnoreCase(p.getString("SAVED_KEY", ""))) return null;   // মাস্টার কী → সব
+        String raw = p.getString("ALLOWED_METHODS", null);
+        if (raw == null) return null;
+        try { return new org.json.JSONArray(raw); } catch (Exception e) { return null; }
+    }
+
+    public static boolean isMethodAllowed(Context ctx, String method) {
+        org.json.JSONArray a = allowedList(ctx);
+        if (a == null) return true;
+        String m = (method == null ? "" : method).toUpperCase(java.util.Locale.ROOT).replaceAll("[^A-Z0-9]", "");
+        for (int i = 0; i < a.length(); i++) {
+            String t = a.optString(i, "");
+            if (t.equals("*")) return true;
+            if (!t.isEmpty() && m.contains(t)) return true;
+        }
+        return false;
+    }
+
+    /** ওয়েবসাইটে কোনো wallet ON নেই → কোনো SMS পড়া হবে না */
+    public static boolean noWalletEnabled(Context ctx) {
+        org.json.JSONArray a = allowedList(ctx);
+        return a != null && a.length() == 0;
+    }
+
     public static int verifyKeyNow(Context ctx) {
         SharedPreferences prefs = ctx.getSharedPreferences(AUTH_PREFS, Context.MODE_PRIVATE);
         String key = prefs.getString("SAVED_KEY", "");
@@ -144,6 +179,7 @@ public final class AppConfig {
             JSONObject json;
             try { json = new JSONObject(res.body); } catch (Exception e) { return KEY_UNKNOWN; }   // HTML এরর পেজ ইত্যাদি
             if (res.code == 200 && "valid".equals(json.optString("status"))) {
+                saveAllowedMethods(ctx, json);
                 long exp = json.optLong("expires_timestamp", 0);
                 if (exp > 0) prefs.edit().putLong("EXPIRE_TIME", exp).apply();   // অ্যাডমিন মেয়াদ বাড়ালে/কমালে আপডেট
                 prefs.edit().putLong("KEY_CHECKED_AT", System.currentTimeMillis()).apply();

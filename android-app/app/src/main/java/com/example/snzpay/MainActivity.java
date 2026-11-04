@@ -251,6 +251,9 @@ public class MainActivity extends Activity {
                 tvSyncStatus.setText("📵 SMS permission is OFF — payment SMS cannot be read.\n👉 Tap here to allow");
                 tvSyncStatus.setTextColor(Color.parseColor("#DC2626"));
                 tvSyncStatus.setOnClickListener(v -> showSmsPermissionDialog());
+            } else if (AppConfig.noWalletEnabled(this)) {
+                tvSyncStatus.setText("⚙ No wallet is ON in your website (Dashboard → Wallet Setup). Turn ON bKash / Nagad / … there — only those SMS are read.");
+                tvSyncStatus.setTextColor(Color.parseColor("#D97706"));
             } else if (!AppConfig.isAppEnabled(this)) {
                 tvSyncStatus.setText("⏸ Paused by admin — SMS are saved on this phone");
                 tvSyncStatus.setTextColor(Color.parseColor("#D97706"));

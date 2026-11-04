@@ -158,6 +158,34 @@ if ($licenseKey === '') {
     jsonResponse(403, ["status" => "error", "message" => "License key is required."]);
 }
 
+// -------------------------------------------------------------------------
+// ✅ ইউজার Wallet Setup এ যে wallet গুলো ON রেখেছে — অ্যাপ শুধু সেগুলোর SMS পড়বে/পাঠাবে
+// -------------------------------------------------------------------------
+if (!function_exists('snzAllowedSmsTokens')) {
+    function snzAllowedSmsTokens(PDO $pdo, $uid) {
+        try {
+            $st = $pdo->prepare("SELECT category, provider FROM user_wallets WHERE user_id = ? AND status = 'active'");
+            $st->execute([(int) $uid]);
+        } catch (Throwable $e) {
+            return null;   // টেবিল না থাকলে → কোনো বাধা নেই
+        }
+        $t = [];
+        foreach ($st->fetchAll() as $w) {
+            if (strtolower((string) $w['category']) === 'qr') { $t[] = 'QR'; continue; }
+            $p = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $w['provider']));
+            if ($p !== '') $t[] = $p;
+        }
+        return array_values(array_unique($t));
+    }
+    function snzSmsMethodAllowed($method, array $tokens) {
+        $m = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $method));
+        foreach ($tokens as $t) {
+            if ($t !== '' && strpos($m, $t) !== false) return true;
+        }
+        return false;
+    }
+}
+
 $pdo = getDBConnection();
 if (!$pdo) {
     if (function_exists('snz_log_error')) snz_log_error('web', 'Database connection failed', 'Database connection error — could not connect to MySQL with the details in config.php', '', ['where' => basename(__FILE__)]);
@@ -191,6 +219,14 @@ try {
 
     if (!$ownerUserId) {
         jsonResponse(403, ["status" => "error", "message" => "Invalid or expired license key."]);
+    }
+
+    // ----- ইউজার Wallet Setup এ এই wallet ON না করলে নেওয়া হবে না -----
+    if (strcasecmp($licenseKey, MASTER_KEY) !== 0) {
+        $allowTokens = snzAllowedSmsTokens($pdo, $ownerUserId);
+        if (is_array($allowTokens) && !snzSmsMethodAllowed($method, $allowTokens)) {
+            jsonResponse(422, ["status" => "error", "message" => $method . " is not turned ON in your Wallet Setup."]);
+        }
     }
 
     // ----- ডুপ্লিকেট চেক (UNIQUE ইনডেক্স না থাকলেও ডাবল সেভ হবে না) -----
