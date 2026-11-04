@@ -1,4 +1,6 @@
 <?php
+// API উত্তরে কখনো PHP warning/notice লেখা যাবে না (না হলে JSON ভেঙে যায়) — error গুলো Admin → Errors এ লগ হয়
+@ini_set('display_errors', '0');
 // =========================================================================
 // 📲 App → Server SMS Gateway
 // অ্যাপ এখানে bKash / Nagad / Rocket SMS পাঠায়, সেটা payments টেবিলে সেভ হয়

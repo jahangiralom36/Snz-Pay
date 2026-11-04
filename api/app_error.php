@@ -1,4 +1,6 @@
 <?php
+// API উত্তরে কখনো PHP warning/notice লেখা যাবে না (না হলে JSON ভেঙে যায়) — error গুলো Admin → Errors এ লগ হয়
+@ini_set('display_errors', '0');
 // =========================================================================
 // 📲 App → Server: অ্যাপের error রিপোর্ট (Admin → Errors → App Error এ দেখা যায়)
 // অ্যাপ নিজে থেকেই পাঠায় — login ব্যর্থ, SMS আপলোড ব্যর্থ, crash ইত্যাদি।

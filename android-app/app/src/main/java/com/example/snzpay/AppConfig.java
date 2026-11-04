@@ -200,7 +200,21 @@ public final class AppConfig {
         public final int code;
         public final String body;
         public boolean enc;   // সার্ভার এনকোড করা ডাটা বুঝেছে (X-SNZ-Enc হেডার)
-        HttpResult(int code, String body) { this.code = code; this.body = body; }
+        HttpResult(int code, String body) { this.code = code; this.body = cleanJson(body); }
+    }
+
+    /** উত্তরের আগে PHP warning / বাড়তি লেখা থাকলে বাদ দিয়ে শুধু JSON রাখা */
+    static String cleanJson(String b) {
+        if (b == null) return "";
+        String t = b.trim();
+        if (t.startsWith("{") || t.startsWith("[")) return t;
+        int i = t.indexOf("{\"status\"");
+        int j = t.lastIndexOf('}');
+        if (i >= 0 && j > i) {
+            String cut = t.substring(i, j + 1);
+            try { new JSONObject(cut); return cut; } catch (Exception ignored) {}
+        }
+        return b;
     }
 
     // কিছু হোস্টিং এর ফায়ারওয়াল (ModSecurity / Imunify360) অ্যাপের ডিফল্ট পরিচয় দেখলে 403/404 দেয়
