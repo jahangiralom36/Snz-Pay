@@ -1224,7 +1224,12 @@ if (isset($_POST['mg_action'])) {
                 if ($kStr && !empty($FIREBASE_URL)) pushToFirebase(rtrim($FIREBASE_URL, '/') . "/license_keys/" . urlencode($kStr) . ".json", "DELETE");
                 snzMgJson(['ok' => true, 'msg' => 'Key deleted.']);
             }
-            case 'key_extend': {
+            case 'key_reset_phone': {
+                try { $pdo->prepare("DELETE FROM key_devices WHERE key_id = ?")->execute([$id]); } catch (Throwable $e) {}
+                $pdo->prepare("UPDATE user_keys SET device_id = NULL, device_name = NULL, device_bound_at = NULL WHERE id = ?")->execute([$id]);
+                snzMgJson(['ok' => true, 'msg' => 'Phone reset — the key can now log in on a new phone.']);
+            }
+                        case 'key_extend': {
                 $days = max(1, min(3650, intval($_POST['days'] ?? 0)));
                 $pdo->prepare("UPDATE user_keys SET expires_at = DATE_ADD(GREATEST(expires_at, NOW()), INTERVAL ? DAY) WHERE id = ?")->execute([$days, $id]);
                 snzMgJson(['ok' => true, 'msg' => "Key extended by $days day(s)."]);
@@ -1267,7 +1272,7 @@ if (isset($_GET['ajax_search'])) {
         $st->execute([$idq, $like, $like]);
         $out['users'] = $st->fetchAll();
     }
-    $st = $pdo->prepare("SELECT k.id, k.license_key, k.plan_name, k.expires_at, k.status, k.max_devices, u.username, u.id AS user_id,
+    $st = $pdo->prepare("SELECT k.id, k.license_key, k.plan_name, k.expires_at, k.status, k.max_devices, k.device_name, u.username, u.id AS user_id,
             (k.expires_at > NOW()) AS live
         FROM user_keys k JOIN users u ON u.id = k.user_id
         WHERE k.license_key LIKE ? OR k.plan_name LIKE ? OR u.username LIKE ? OR u.email LIKE ? OR k.device_name LIKE ? ORDER BY k.id DESC LIMIT 20");
@@ -1278,6 +1283,21 @@ if (isset($_GET['ajax_search'])) {
         WHERE b.brand_name LIKE ? OR b.api_key LIKE ? OR b.brand_link LIKE ? OR b.bound_label LIKE ? OR b.whatsapp LIKE ? OR u.username LIKE ? OR u.email LIKE ? ORDER BY b.id DESC LIMIT 20");
     $st->execute([$like, $like, $like, $like, $like, $like, $like]);
     $out['brands'] = $st->fetchAll();
+    // কিছু না পেলে: "name#12" / "name 12" এর মত হলে প্রথম শব্দ দিয়ে আবার
+    if (!$out['users'] && !$out['keys'] && !$out['brands'] && empty($_GET['_retry'])) {
+        $tok = preg_split('/[^A-Za-z0-9@._-]+/', $q, -1, PREG_SPLIT_NO_EMPTY);
+        if ($tok && $tok[0] !== $q && strlen($tok[0]) >= 2) {
+            $_GET['ajax_search'] = $tok[0]; $_GET['_retry'] = 1;
+            $q2 = $tok[0];
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $q2) . '%';
+            $st = $pdo->prepare("SELECT id, username, email, balance, created_at, COALESCE(status, 'active') AS status, 0 AS keys_n, 0 AS brands_n FROM users WHERE username LIKE ? OR email LIKE ? ORDER BY id DESC LIMIT 20");
+            try { $st->execute([$like, $like]); $out['users'] = $st->fetchAll(); } catch (Throwable $e) {}
+            $st = $pdo->prepare("SELECT k.id, k.license_key, k.plan_name, k.expires_at, k.status, k.max_devices, k.device_name, u.username, u.id AS user_id, (k.expires_at > NOW()) AS live FROM user_keys k JOIN users u ON u.id = k.user_id WHERE k.license_key LIKE ? OR u.username LIKE ? OR k.device_name LIKE ? ORDER BY k.id DESC LIMIT 20");
+            $st->execute([$like, $like, $like]); $out['keys'] = $st->fetchAll();
+            $st = $pdo->prepare("SELECT b.id, b.brand_name, b.brand_type, b.brand_link, b.api_key, b.status, b.bound_label, b.last_used_at, u.username, u.id AS user_id FROM brand_keys b JOIN users u ON u.id = b.user_id WHERE b.brand_name LIKE ? OR b.api_key LIKE ? OR b.brand_link LIKE ? OR b.bound_label LIKE ? OR u.username LIKE ? ORDER BY b.id DESC LIMIT 20");
+            $st->execute([$like, $like, $like, $like, $like]); $out['brands'] = $st->fetchAll();
+        }
+    }
     snzMgJson($out);
 }
 
@@ -2754,8 +2774,9 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
                 h += '<div class="mg-h">LICENSE KEYS (' + mgData.keys.length + ')</div>';
                 mgData.keys.forEach(k => {
                     const st = k.status === 'active' ? (+k.live ? ['ok', 'ACTIVE'] : ['mid', 'EXPIRED']) : ['bad', k.status.toUpperCase()];
-                    h += '<div class="mg-card' + (k.status !== 'active' ? ' banned' : '') + '"><div class="mg-head"><div class="mg-ic">🔑</div><div class="min-w-0 flex-1"><div class="mg-t font-mono">' + mgEsc(k.license_key) + '</div><div class="mg-s">' + mgEsc(k.plan_name) + ' • ' + mgEsc(k.username) + ' • ' + k.max_devices + ' device(s) • until ' + mgDate(k.expires_at) + '</div></div><span class="mg-tag ' + st[0] + '">' + st[1] + '</span></div>'
+                    h += '<div class="mg-card' + (k.status !== 'active' ? ' banned' : '') + '"><div class="mg-head"><div class="mg-ic">🔑</div><div class="min-w-0 flex-1"><div class="mg-t font-mono">' + mgEsc(k.license_key) + '</div><div class="mg-s">' + mgEsc(k.plan_name) + ' • ' + mgEsc(k.username) + ' • 📱 ' + (k.device_name ? mgEsc(k.device_name) : 'no phone yet') + ' • until ' + mgDate(k.expires_at) + '</div></div><span class="mg-tag ' + st[0] + '">' + st[1] + '</span></div>'
                         + '<div class="mg-acts"><button class="mg-btn" onclick="navigator.clipboard && navigator.clipboard.writeText(\'' + mgEsc(k.license_key) + '\'); mgToast(\'Copied\', 1)">Copy</button><button class="mg-btn g" onclick="mgExtend(' + k.id + ')">+ Extend days</button>'
+                        + (k.device_name ? '<button class="mg-btn" onclick="mgDo(\'key_reset_phone\',' + k.id + ',{},\'Reset the phone of this key? It will log in on a new phone.\')">📱 Reset phone</button>' : '')
                         + '<button class="mg-btn ' + (k.status === 'active' ? 'y' : 'g') + '" onclick="mgDo(\'key_ban\',' + k.id + ')">' + (k.status === 'active' ? 'Ban' : 'Unban') + '</button>'
                         + '<button class="mg-btn r" onclick="mgDo(\'key_delete\',' + k.id + ',{},\'Delete this key? The app using it will log out.\')">Delete</button></div></div>';
                 });

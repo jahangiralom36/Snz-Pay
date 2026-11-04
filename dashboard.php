@@ -2762,7 +2762,7 @@ try {
                                 </div>
                                 <ul class="space-y-2 text-xs text-slate-200 mb-5">
                                     <li class="flex items-center gap-2"><i class="fa-regular fa-clock text-[#00D9FF] w-4"></i> <?= snzDurationLabel($pl['duration_hours']) ?> access</li>
-                                    <li class="flex items-center gap-2"><i class="fa-solid fa-mobile-screen text-[#00D89A] w-4"></i> <?= (int) $pl['max_devices'] ?> phone<?= (int) $pl['max_devices'] > 1 ? 's' : '' ?> per key</li>
+                                    <li class="flex items-center gap-2"><i class="fa-solid fa-mobile-screen text-[#00D89A] w-4"></i> 1 phone login per key</li>
                                     <li class="flex items-center gap-2"><i class="fa-solid fa-link text-amber-400 w-4"></i> <?= (int) $pl['max_brand_keys'] ?> brand key<?= (int) $pl['max_brand_keys'] != 1 ? 's' : '' ?></li>
                                     <li class="flex items-center gap-2"><i class="fa-solid fa-check text-[#00D89A] w-4"></i> bKash, Nagad, Rocket, Upay, Binance &amp; QR SMS</li>
                                 </ul>

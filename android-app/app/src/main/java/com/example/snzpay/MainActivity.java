@@ -246,7 +246,12 @@ public class MainActivity extends Activity {
 
         if (tvSyncStatus != null) {
             String err = SyncManager.getLastError(this);
-            if (!AppConfig.isAppEnabled(this)) {
+            tvSyncStatus.setOnClickListener(null);
+            if (!hasSmsPermission()) {
+                tvSyncStatus.setText("📵 SMS permission is OFF — payment SMS cannot be read.\n👉 Tap here to allow");
+                tvSyncStatus.setTextColor(Color.parseColor("#DC2626"));
+                tvSyncStatus.setOnClickListener(v -> showSmsPermissionDialog());
+            } else if (!AppConfig.isAppEnabled(this)) {
                 tvSyncStatus.setText("⏸ Paused by admin — SMS are saved on this phone");
                 tvSyncStatus.setTextColor(Color.parseColor("#D97706"));
             } else if (waiting == 0) {
@@ -316,6 +321,37 @@ public class MainActivity extends Activity {
         p.edit().putBoolean("battery_asked", true).apply();
     }
 
+    // 📵 SMS পারমিশন — নতুন APK ইনস্টলে Android 13+ এ "Restricted setting" এ আটকে থাকে
+    private boolean hasSmsPermission() {
+        if (Build.VERSION.SDK_INT < 23) return true;
+        return checkSelfPermission(Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+                && checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private long smsDialogShownAt = 0;
+
+    private void showSmsPermissionDialog() {
+        if (isFinishing() || hasSmsPermission()) return;
+        smsDialogShownAt = System.currentTimeMillis();
+        new PremiumDialog(this)
+                .icon("📵", PremiumDialog.RED)
+                .badge("SMS PERMISSION OFF")
+                .title("Allow SMS access")
+                .message("SNZPay cannot read your bKash / Nagad / Rocket SMS, so payments are not uploaded.\n\n"
+                        + "1. Tap OPEN SETTINGS → Permissions → SMS → Allow.\n"
+                        + "2. If it says “Restricted setting”: on the App info page tap ⋮ (top-right) → “Allow restricted settings”, then allow SMS.\n\n"
+                        + "After allowing, come back — old SMS are read automatically.")
+                .primary("OPEN SETTINGS", d -> {
+                    try {
+                        Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                        i.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(i);
+                    } catch (Exception ignored) {}
+                })
+                .secondary("ASK AGAIN", d -> forceRequestPermissions())
+                .show();
+    }
+
     private void start24x7Service() {
         SyncManager.ensureServiceRunning(this);
         SyncJobService.schedulePeriodic(this);
@@ -325,6 +361,7 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         start24x7Service();
+        if (!hasSmsPermission()) showSmsPermissionDialog();
         // পারমিশন পাওয়ার পর মিস হওয়া SMS খোঁজা
         final Context app = getApplicationContext();
         new Thread(() -> {
@@ -381,6 +418,9 @@ public class MainActivity extends Activity {
         }).start();
         keyHandler.removeCallbacks(keyLoop);
         keyHandler.post(keyLoop);
+        if (!hasSmsPermission() && System.currentTimeMillis() - smsDialogShownAt > 60 * 1000L) {
+            keyHandler.postDelayed(this::showSmsPermissionDialog, 1200);
+        }
     }
 
     private long lastKeyCheck = 0;

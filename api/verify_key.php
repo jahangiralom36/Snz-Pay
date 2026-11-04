@@ -398,12 +398,12 @@ if ($expireTime === false || $expireTime < time()) {
 }
 
 // ---------------------------------------------------------------------
-// 📱 প্ল্যান অনুযায়ী কয়টা ফোনে কী চলবে (max_devices)
+// 📱 এক কী শুধু এক ফোনে চলবে
 //  - নতুন ফোন লগইন করলে জায়গা থাকলে যুক্ত হয়, না থাকলে আটকে যায়
 //  - অ্যাডমিন প্যানেল থেকে কোনো ফোন রিমুভ করলে সেই জায়গায় নতুন ফোন লগইন করা যায়
 // ---------------------------------------------------------------------
 if ($deviceId !== '') {
-    $maxDevices = max(1, (int) ($keyRow['max_devices'] ?? 1));
+    $maxDevices = 1;   // 🔒 এক কী = এক ফোন (অন্য ফোনে নিতে হলে অ্যাডমিন "Reset phone" করবে)
     $dv = $pdo->prepare("SELECT id, device_name FROM key_devices WHERE key_id = ? AND device_id = ? LIMIT 1");
     $dv->execute([$keyRow['id'], $deviceId]);
     $known = $dv->fetch();
@@ -421,7 +421,7 @@ if ($deviceId !== '') {
             $list = implode(', ', array_filter(array_map('strval', $names->fetchAll(PDO::FETCH_COLUMN)))) ?: 'another phone';
             jsonResponse(403, [
                 "status" => "error",
-                "message" => "This key is already connected to " . $list . " (" . $used . "/" . $maxDevices . " phones). Ask admin to remove a phone or upgrade your plan.",
+                "message" => "This key is already logged in on " . $list . ". One key works on one phone only — ask admin to reset the phone to use it on this one.",
                 "reason" => "device_locked",
             ]);
         }
