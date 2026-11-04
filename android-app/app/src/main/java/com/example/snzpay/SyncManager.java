@@ -264,6 +264,7 @@ public final class SyncManager {
     /** সার্ভিস চালু রাখা (যেখান থেকেই ডাকা হোক, ক্র্যাশ করবে না) */
     public static void ensureServiceRunning(Context ctx) {
         if (!AppConfig.isLoggedIn(ctx)) return;
+        if (PaymentService.running) return;   // চলছে → আবার start না
         try {
             Intent intent = new Intent(ctx, PaymentService.class);
             if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(intent);

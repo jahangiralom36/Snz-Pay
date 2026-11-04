@@ -22,9 +22,7 @@ public class SyncJobService extends JobService {
         try {
             JobScheduler js = (JobScheduler) ctx.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             if (js == null) return;
-            for (JobInfo ji : js.getAllPendingJobs()) {
-                if (ji.getId() == JOB_PERIODIC) return;   // আগে থেকেই আছে
-            }
+            if (isPending(js, JOB_PERIODIC)) return;   // আগে থেকেই আছে
             JobInfo job = new JobInfo.Builder(JOB_PERIODIC, new ComponentName(ctx, SyncJobService.class))
                     .setPeriodic(15 * 60 * 1000L)
                     .setPersisted(true)                    // ফোন রিস্টার্টের পরেও থাকবে
@@ -33,13 +31,23 @@ public class SyncJobService extends JobService {
         } catch (Exception ignored) {}
     }
 
+    private static volatile long lastOnlineSchedule = 0;
+
+    /** নির্দিষ্ট job টা আগে থেকে আছে কিনা — পুরো লিস্ট না এনে শুধু সেটা দেখা (হালকা) */
+    private static boolean isPending(JobScheduler js, int id) {
+        if (android.os.Build.VERSION.SDK_INT >= 24) return js.getPendingJob(id) != null;
+        for (JobInfo ji : js.getAllPendingJobs()) if (ji.getId() == id) return true;
+        return false;
+    }
+
     public static void scheduleWhenOnline(Context ctx) {
+        // ১ মিনিটে একবারের বেশি না
+        if (android.os.SystemClock.elapsedRealtime() - lastOnlineSchedule < 60 * 1000L) return;
+        lastOnlineSchedule = android.os.SystemClock.elapsedRealtime();
         try {
             JobScheduler js = (JobScheduler) ctx.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             if (js == null) return;
-            for (JobInfo ji : js.getAllPendingJobs()) {
-                if (ji.getId() == JOB_WHEN_ONLINE) return;   // আগে থেকেই অপেক্ষায় আছে
-            }
+            if (isPending(js, JOB_WHEN_ONLINE)) return;   // আগে থেকেই অপেক্ষায় আছে
             JobInfo job = new JobInfo.Builder(JOB_WHEN_ONLINE, new ComponentName(ctx, SyncJobService.class))
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                     .setMinimumLatency(20000)

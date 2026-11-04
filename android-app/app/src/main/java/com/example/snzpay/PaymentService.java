@@ -1,6 +1,5 @@
 package com.example.snzpay;
 
-import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -19,7 +18,6 @@ import android.os.SystemClock;
 
 /**
  * ২৪/৭ ব্যাকগ্রাউন্ড সার্ভিস।
- *  - নোটিফিকেশন কেটে দিলে কয়েক সেকেন্ড পর আবার চলে আসে
  *  - নেট চালু হলেই জমে থাকা SMS সার্ভারে পাঠায়
  *  - প্রতি মিনিটে বাকি SMS চেক, প্রতি ১০ মিনিটে মিস হওয়া SMS খোঁজে
  */
@@ -30,6 +28,9 @@ public class PaymentService extends Service {
     private static final String[] OLD_CHANNELS = {"snz_gateway_channel_live", "snz_gateway_service"};
     private static final int NOTIFICATION_ID = 1001;
     public static final String ACTION_REPOST = "com.example.snzpay.REPOST_NOTIFICATION";
+
+    /** সার্ভিস এখন চলছে কিনা — চললে আবার start করা হয় না (বারবার start = System UI এর উপর চাপ) */
+    public static volatile boolean running = false;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -78,6 +79,7 @@ public class PaymentService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        running = true;
         ErrorReporter.installCrashHandler(this);
         createNotificationChannel();
         showNotification(true);
@@ -219,11 +221,6 @@ public class PaymentService extends Service {
         stopSelf();
     }
 
-    @Override
-    public void onTaskRemoved(Intent rootIntent) {
-        scheduleRestart(1000);
-        super.onTaskRemoved(rootIntent);
-    }
 
     @Override
     public void onDestroy() {
@@ -234,25 +231,11 @@ public class PaymentService extends Service {
                 if (cm != null) cm.unregisterNetworkCallback(networkCallback);
             } catch (Exception ignored) {}
         }
-        if (AppConfig.isLoggedIn(this)) {
-            scheduleRestart(5000);
-            SyncJobService.scheduleWhenOnline(this);
-        }
+        running = false;
+        // সিস্টেম বন্ধ করলে জোর করে সাথে সাথে আবার চালু করা হয় না (restart loop এ ফোন আটকে যেত)।
+        // START_STICKY + JobScheduler নিজেরাই সময়মতো আবার চালায়; SMS এলে SmsReceiver সবসময় কাজ করে।
+        if (AppConfig.isLoggedIn(this)) SyncJobService.scheduleWhenOnline(this);
         super.onDestroy();
-    }
-
-    private void scheduleRestart(long delayMs) {
-        if (!AppConfig.isLoggedIn(this)) return;
-        try {
-            Intent restartIntent = new Intent(getApplicationContext(), PaymentService.class);
-            PendingIntent restartPending = Build.VERSION.SDK_INT >= 26
-                    ? PendingIntent.getForegroundService(getApplicationContext(), 1, restartIntent,
-                        PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE)
-                    : PendingIntent.getService(getApplicationContext(), 1, restartIntent,
-                        PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE);
-            AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-            if (am != null) am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + delayMs, restartPending);
-        } catch (Exception ignored) {}
     }
 
     @Override
