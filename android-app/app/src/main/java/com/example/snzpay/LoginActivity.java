@@ -59,7 +59,6 @@ public class LoginActivity extends Activity {
         // ওয়েবসাইট থেকে নাম/লোগো/On-Off/আপডেট তথ্য আনা
         AppConfig.fetchAsync(this, () -> {
             if (isFinishing()) return;
-            applyBranding();
             RemoteDialogs.check(this);
         });
     }
@@ -79,16 +78,12 @@ public class LoginActivity extends Activity {
         });
     }
 
-    /** ওয়েবসাইটের Admin Panel → App Settings থেকে নাম, ট্যাগলাইন, লোগো */
+    /** নাম / লোগো অ্যাপের ভেতরেই স্থির (ওয়েবসাইট থেকে আর আসে না — অ্যাপ হালকা) */
     private void applyBranding() {
-        JSONObject cfg = AppConfig.get(this);
         TextView tvName = findViewById(R.id.tvLoginAppName);
         TextView tvTag = findViewById(R.id.tvLoginTagline);
-        ImageView logo = findViewById(R.id.logoText);
-        if (tvName != null) tvName.setText(cfg.optString("app_name", "SNZ Pay"));
-        if (tvTag != null) tvTag.setText(cfg.optString("app_tagline", "Faster • Safer • Smarter"));
-        Bitmap remote = AppConfig.getLogo(this);
-        if (logo != null && remote != null) logo.setImageBitmap(remote);
+        if (tvName != null) tvName.setText(AppConfig.APP_NAME);
+        if (tvTag != null) tvTag.setText(AppConfig.APP_TAGLINE);
     }
 
     private void applyEntranceAnimations() {

@@ -810,8 +810,6 @@ $smsTestResult = null;
 
 if (isset($_POST['action_update_app'])) {
     $activeSection = 'sec-app';
-    $APP_SET['app_name']            = mb_substr(trim($_POST['app_name'] ?? ''), 0, 40);
-    $APP_SET['app_tagline']         = mb_substr(trim($_POST['app_tagline'] ?? ''), 0, 80);
     $APP_SET['notice']              = mb_substr(trim($_POST['app_notice'] ?? ''), 0, 500);
     $APP_SET['app_enabled']         = isset($_POST['app_enabled']);
     $APP_SET['disabled_message']    = mb_substr(trim($_POST['disabled_message'] ?? ''), 0, 300);
@@ -821,32 +819,12 @@ if (isset($_POST['action_update_app'])) {
     $APP_SET['force_update']        = isset($_POST['force_update']);
     $APP_SET['strict_sender']       = isset($_POST['strict_sender']);
     $apkUrlIn = trim($_POST['apk_url'] ?? '');
-    $logoUrlIn = trim($_POST['app_logo_url'] ?? '');
 
     if ($apkUrlIn !== '' && !preg_match('#^https?://#i', $apkUrlIn)) {
         $error = "APK link must start with https:// (leave empty to use the uploaded APK)";
-    } elseif ($logoUrlIn !== '' && !preg_match('#^(https?://|uploads/)#i', $logoUrlIn)) {
-        $error = "Logo URL must start with https://";
     } else {
         $APP_SET['apk_url'] = $apkUrlIn;
-        $APP_SET['app_logo'] = $logoUrlIn;
-        if (isset($_FILES['app_logo_file']) && $_FILES['app_logo_file']['error'] === UPLOAD_ERR_OK) {
-            $ext = strtolower(pathinfo($_FILES['app_logo_file']['name'], PATHINFO_EXTENSION));
-            if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp'], true) || @getimagesize($_FILES['app_logo_file']['tmp_name']) === false) {
-                $error = "App logo must be a PNG, JPG or WEBP image!";
-            } elseif ($_FILES['app_logo_file']['size'] > 2 * 1024 * 1024) {
-                $error = "App logo must be smaller than 2 MB!";
-            } else {
-                $logoDir = __DIR__ . '/uploads/logo/';
-                if (!is_dir($logoDir)) @mkdir($logoDir, 0755, true);
-                $logoName = 'app_logo_' . time() . '.' . $ext;
-                if (@move_uploaded_file($_FILES['app_logo_file']['tmp_name'], $logoDir . $logoName)) {
-                    $APP_SET['app_logo'] = 'uploads/logo/' . $logoName;
-                } else {
-                    $error = "Could not save logo (check uploads folder permission).";
-                }
-            }
-        }
+        unset($APP_SET['app_name'], $APP_SET['app_tagline'], $APP_SET['app_logo']);
         if (!$error) {
             $msg = snzSaveAppSettings($appSettingsFile, $APP_SET) ? "App settings saved! Apps will update within a few minutes." : "";
             if (!$msg) $error = "Could not save app settings file (check folder permission).";
@@ -2271,23 +2249,6 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
                 <form method="POST" enctype="multipart/form-data" class="space-y-4">
                     <input type="hidden" name="action_update_app" value="1">
                     <input type="hidden" name="csrf" value="<?= $CSRF ?>">
-
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label class="text-xs font-semibold text-slate-200 block mb-1.5">App Name (inside app)</label>
-                            <input type="text" name="app_name" maxlength="40" value="<?= htmlspecialchars($APP_SET['app_name'] ?? 'SNZ Pay') ?>" class="w-full bg-[#051433] border border-[#0d2a63] rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#00D9FF]">
-                        </div>
-                        <div>
-                            <label class="text-xs font-semibold text-slate-200 block mb-1.5">Tagline</label>
-                            <input type="text" name="app_tagline" maxlength="80" value="<?= htmlspecialchars($APP_SET['app_tagline'] ?? 'Faster • Safer • Smarter') ?>" class="w-full bg-[#051433] border border-[#0d2a63] rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#00D9FF]">
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="text-xs font-semibold text-slate-200 block mb-1.5">App Logo (upload or link)</label>
-                        <input type="file" name="app_logo_file" accept="image/*" class="w-full bg-[#051433] border border-[#0d2a63] rounded-2xl p-3 text-white text-xs file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#007BFF] file:text-white">
-                        <input type="text" name="app_logo_url" value="<?= htmlspecialchars($APP_SET['app_logo'] ?? '') ?>" placeholder="Empty = use website logo" class="mt-2 w-full bg-[#051433] border border-[#0d2a63] rounded-2xl px-4 py-3 text-xs text-white font-mono focus:outline-none focus:border-[#00D9FF]">
-                    </div>
 
                     <div>
                         <label class="text-xs font-semibold text-slate-200 block mb-1.5">Notice inside the app (optional)</label>

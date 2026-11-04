@@ -110,7 +110,7 @@ public class PaymentService extends Service {
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
 
-        String appName = AppConfig.get(this).optString("app_name", "SNZ Pay");
+        String appName = AppConfig.APP_NAME;
         String text;
         if (!AppConfig.isAppEnabled(this)) {
             text = appName + " সাময়িক বন্ধ আছে • SMS ফোনে জমা হচ্ছে";
@@ -138,7 +138,7 @@ public class PaymentService extends Service {
     private String lastNoteText = null;
 
     private String noteText() {
-        String appName = AppConfig.get(this).optString("app_name", "SNZ Pay");
+        String appName = AppConfig.APP_NAME;
         return AppConfig.isAppEnabled(this) ? appName + " অটো পেমেন্ট সক্রিয় আছে" : appName + " সাময়িক বন্ধ আছে • SMS ফোনে জমা হচ্ছে";
     }
 

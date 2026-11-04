@@ -109,19 +109,17 @@ public class MainActivity extends Activity {
         startActivity(new Intent(this, HistoryActivity.class));
     }
 
-    /** ওয়েবসাইট থেকে আসা নাম, ট্যাগলাইন, লোগো, নোটিশ, On/Off, আপডেট */
+    /** ওয়েবসাইট থেকে আসা নোটিশ, On/Off, আপডেট (নাম/লোগো অ্যাপেই স্থির) */
     private void applyRemoteConfig() {
         if (isFinishing()) return;
         JSONObject cfg = AppConfig.get(this);
-        if (tvAppName != null) tvAppName.setText(cfg.optString("app_name", "SNZ Pay"));
-        if (tvTagline != null) tvTagline.setText(cfg.optString("app_tagline", "Faster • Safer • Smarter"));
+        if (tvAppName != null) tvAppName.setText(AppConfig.APP_NAME);
+        if (tvTagline != null) tvTagline.setText(AppConfig.APP_TAGLINE);
         if (tvNotice != null) {
             String notice = cfg.optString("notice", "").trim();
             tvNotice.setText(notice);
             tvNotice.setVisibility(notice.isEmpty() ? View.GONE : View.VISIBLE);
         }
-        Bitmap remote = AppConfig.getLogo(this);
-        if (remote != null && tvLiveLogo instanceof ImageView) ((ImageView) tvLiveLogo).setImageBitmap(remote);
         RemoteDialogs.check(this);
     }
 
@@ -169,7 +167,7 @@ public class MainActivity extends Activity {
             openHistory();
         });
 
-        if (tvTitle != null) tvTitle.setText(AppConfig.get(this).optString("app_name", "SNZ Pay") + " Controller");
+        if (tvTitle != null) tvTitle.setText(AppConfig.APP_NAME + " Controller");
 
         SharedPreferences prefs = getSharedPreferences(AppConfig.AUTH_PREFS, MODE_PRIVATE);
         String key = prefs.getString("SAVED_KEY", "");

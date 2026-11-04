@@ -29,6 +29,8 @@ import java.nio.charset.StandardCharsets;
  */
 public final class AppConfig {
 
+    public static final String APP_NAME = "SNZ Pay";
+    public static final String APP_TAGLINE = "Faster • Safer • Smarter";
     public static final String BASE_URL = "https://snzpay.digital";
     public static final String GATEWAY_URL = BASE_URL + "/api/app_gateway.php";
     public static final String VERIFY_KEY_URL = BASE_URL + "/api/verify_key.php";
@@ -39,7 +41,6 @@ public final class AppConfig {
 
     public static final String AUTH_PREFS = "SNZ_AUTH";
     private static final String CONFIG_PREFS = "SNZ_CONFIG";
-    private static final String LOGO_FILE = "remote_logo.png";
 
     public static final String ACTION_REFRESH = "REFRESH_DASHBOARD";
 
@@ -71,19 +72,13 @@ public final class AppConfig {
             if (!"ok".equals(json.optString("status"))) return false;
 
             SharedPreferences prefs = ctx.getSharedPreferences(CONFIG_PREFS, Context.MODE_PRIVATE);
-            String oldLogo = get(ctx).optString("logo_url", "");
             prefs.edit()
                     .putString("json", json.toString())
                     .putLong("fetched_at", System.currentTimeMillis())
                     .apply();
-
-            String newLogo = json.optString("logo_url", "");
-            File logoFile = new File(ctx.getFilesDir(), LOGO_FILE);
-            if (newLogo.isEmpty()) {
-                if (logoFile.exists()) logoFile.delete();
-            } else if (!newLogo.equals(oldLogo) || !logoFile.exists()) {
-                downloadFile(newLogo, logoFile);
-            }
+            // আগের ভার্সনের ডাউনলোড করা লোগো থাকলে মুছে জায়গা খালি করা
+            File oldLogo = new File(ctx.getFilesDir(), "remote_logo.png");
+            if (oldLogo.exists()) oldLogo.delete();
             return true;
         } catch (Exception e) {
             return false;
@@ -99,30 +94,6 @@ public final class AppConfig {
     }
 
     /** ওয়েবসাইট থেকে সেট করা লোগো (না থাকলে null → অ্যাপের নিজের লোগো দেখাবে) */
-    private static Bitmap logoCache = null;
-    private static long logoCacheStamp = 0;
-
-    /** লোগো ছোট করে (সর্বোচ্চ ~২০০px) একবারই পড়া — বড় ছবি পুরোটা মেমরিতে নিলে কম দামি ফোন ধীর হয়ে যায় */
-    public static synchronized Bitmap getLogo(Context ctx) {
-        File f = new File(ctx.getFilesDir(), LOGO_FILE);
-        if (!f.exists() || get(ctx).optString("logo_url", "").isEmpty()) return null;
-        if (logoCache != null && logoCacheStamp == f.lastModified()) return logoCache;
-        try {
-            BitmapFactory.Options o = new BitmapFactory.Options();
-            o.inJustDecodeBounds = true;
-            BitmapFactory.decodeFile(f.getAbsolutePath(), o);
-            int sample = 1;
-            while (o.outWidth / (sample * 2) >= 200 && o.outHeight / (sample * 2) >= 200) sample *= 2;
-            BitmapFactory.Options o2 = new BitmapFactory.Options();
-            o2.inSampleSize = sample;
-            logoCache = BitmapFactory.decodeFile(f.getAbsolutePath(), o2);
-            logoCacheStamp = f.lastModified();
-            return logoCache;
-        } catch (Throwable e) {
-            return null;
-        }
-    }
-
     public static String getLicenseKey(Context ctx) {
         return ctx.getSharedPreferences(AUTH_PREFS, Context.MODE_PRIVATE).getString("SAVED_KEY", "");
     }
@@ -737,33 +708,6 @@ public final class AppConfig {
             return sb.toString();
         } catch (Exception e) {
             return "";
-        }
-    }
-
-    private static void downloadFile(String url, File out) {
-        HttpURLConnection conn = null;
-        try {
-            conn = (HttpURLConnection) new URL(url).openConnection();
-            commonHeaders(conn);
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(10000);
-            if (conn.getResponseCode() != 200) return;
-            File tmp = new File(out.getAbsolutePath() + ".tmp");
-            try (InputStream in = conn.getInputStream(); FileOutputStream fos = new FileOutputStream(tmp)) {
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
-            }
-            // সত্যিই ছবি কিনা যাচাই
-            if (BitmapFactory.decodeFile(tmp.getAbsolutePath()) != null) {
-                if (out.exists()) out.delete();
-                tmp.renameTo(out);
-            } else {
-                tmp.delete();
-            }
-        } catch (Exception ignored) {
-        } finally {
-            if (conn != null) conn.disconnect();
         }
     }
 }

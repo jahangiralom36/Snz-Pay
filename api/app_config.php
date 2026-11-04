@@ -56,9 +56,6 @@ $apkUrl = !empty($app['apk_url']) ? $app['apk_url'] : (is_file($root . '/app-rel
 
 echo json_encode([
     'status'              => 'ok',
-    'app_name'            => (string) (!empty($app['app_name']) ? $app['app_name'] : ($site['site_name'] ?? 'SNZ Pay')),
-    'app_tagline'         => (string) (!empty($app['app_tagline']) ? $app['app_tagline'] : ($site['site_tagline'] ?? 'Faster • Safer • Smarter')),
-    'logo_url'            => snzAbsUrl(!empty($app['app_logo']) ? $app['app_logo'] : ($site['site_logo'] ?? ''), $baseUrl),
     'notice'              => (string) ($app['notice'] ?? ''),
     'app_enabled'         => !isset($app['app_enabled']) || (bool) $app['app_enabled'],
     'disabled_message'    => (string) ($app['disabled_message'] ?? 'Service is temporarily unavailable. Please try again later.'),
