@@ -74,14 +74,13 @@ public class PaymentService extends Service {
         }
     };
 
-    private final Runnable repostTask = this::showNotification;
 
     @Override
     public void onCreate() {
         super.onCreate();
         ErrorReporter.installCrashHandler(this);
         createNotificationChannel();
-        showNotification();
+        showNotification(true);
         registerNetworkWatcher();
         SyncJobService.schedulePeriodic(this);
         handler.postDelayed(periodicTask, 5000);
@@ -93,14 +92,7 @@ public class PaymentService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-        if (intent != null && ACTION_REPOST.equals(intent.getAction())) {
-            // ইউজার নোটিফিকেশন কেটে দিয়েছে → ৪ সেকেন্ড পর আবার দেখানো
-            showNotification();   // startForegroundService এর নিয়ম মানতে সাথে সাথে একবার
-            handler.removeCallbacks(repostTask);
-            handler.postDelayed(repostTask, 4000);
-        } else {
-            showNotification();
-        }
+        showNotification(true);   // startForegroundService এর নিয়ম — একবার বসানো বাধ্যতামূলক
         return START_STICKY;
     }
 
@@ -113,10 +105,6 @@ public class PaymentService extends Service {
         PendingIntent contentPi = PendingIntent.getActivity(this, 0, open,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
-        Intent repost = new Intent(this, PaymentService.class).setAction(ACTION_REPOST);
-        PendingIntent deletePi = Build.VERSION.SDK_INT >= 26
-                ? PendingIntent.getForegroundService(this, 2, repost, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)
-                : PendingIntent.getService(this, 2, repost, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= 26
                 ? new Notification.Builder(this, CHANNEL_ID)
@@ -135,7 +123,6 @@ public class PaymentService extends Service {
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
                 .setContentIntent(contentPi)
-                .setDeleteIntent(deletePi)      // কেটে দিলে → ACTION_REPOST
                 .setOngoing(true)
                 .setAutoCancel(false)
                 .setOnlyAlertOnce(true)
@@ -148,7 +135,20 @@ public class PaymentService extends Service {
         return n;
     }
 
-    private void showNotification() {
+    private String lastNoteText = null;
+
+    private String noteText() {
+        String appName = AppConfig.get(this).optString("app_name", "SNZ Pay");
+        return AppConfig.isAppEnabled(this) ? appName + " অটো পেমেন্ট সক্রিয় আছে" : appName + " সাময়িক বন্ধ আছে • SMS ফোনে জমা হচ্ছে";
+    }
+
+    /** লেখা না বদলালে আবার বসানো হয় না — বারবার বসালে ফোনের System UI আটকে যায় */
+    private void showNotification() { showNotification(false); }
+
+    private void showNotification(boolean force) {
+        String t = noteText();
+        if (!force && t.equals(lastNoteText)) return;
+        lastNoteText = t;
         Notification n = buildNotification();
         try {
             if (Build.VERSION.SDK_INT >= 29) {
@@ -202,7 +202,6 @@ public class PaymentService extends Service {
                     // নেট আসার ২ সেকেন্ড পর (কানেকশন স্থির হতে দেওয়া)
                     handler.postDelayed(() -> {
                         SyncManager.syncAsync(getApplicationContext());
-                        handler.postDelayed(PaymentService.this::showNotification, 8000);
                     }, 2000);
                 }
             };

@@ -165,6 +165,8 @@ public final class AppConfig {
         return a != null && a.length() == 0;
     }
 
+    private static volatile int invalidStreak = 0;
+
     public static int verifyKeyNow(Context ctx) {
         SharedPreferences prefs = ctx.getSharedPreferences(AUTH_PREFS, Context.MODE_PRIVATE);
         String key = prefs.getString("SAVED_KEY", "");
@@ -179,13 +181,19 @@ public final class AppConfig {
             JSONObject json;
             try { json = new JSONObject(res.body); } catch (Exception e) { return KEY_UNKNOWN; }   // HTML এরর পেজ ইত্যাদি
             if (res.code == 200 && "valid".equals(json.optString("status"))) {
+                invalidStreak = 0;
                 saveAllowedMethods(ctx, json);
                 long exp = json.optLong("expires_timestamp", 0);
                 if (exp > 0) prefs.edit().putLong("EXPIRE_TIME", exp).apply();   // অ্যাডমিন মেয়াদ বাড়ালে/কমালে আপডেট
                 prefs.edit().putLong("KEY_CHECKED_AT", System.currentTimeMillis()).apply();
                 return KEY_VALID;
             }
-            if (res.code == 403 && "error".equals(json.optString("status"))) {
+            // শুধু পরিষ্কার কারণ (ডিলিট / ব্যান / মেয়াদ শেষ / অন্য ফোনে লক) হলেই — আর পরপর ২ বার নিশ্চিত হলে লগআউট
+            String reason = json.optString("reason", "");
+            if (res.code == 403 && "error".equals(json.optString("status"))
+                    && (reason.equals("not_found") || reason.equals("banned") || reason.equals("expired") || reason.equals("device_locked"))) {
+                invalidStreak++;
+                if (invalidStreak < 2) return KEY_UNKNOWN;
                 prefs.edit().putString("LOGOUT_REASON", json.optString("message", "Your license key is no longer valid.")).apply();
                 return KEY_INVALID;
             }
