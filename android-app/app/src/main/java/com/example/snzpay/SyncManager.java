@@ -195,7 +195,24 @@ public final class SyncManager {
      * ফোন বন্ধ / অ্যাপ বন্ধ থাকায় যেসব SMS মিস হয়েছে, Inbox থেকে খুঁজে বের করে।
      * ডুপ্লিকেট হবে না — একই TrxID দুইবার সেভ হয় না।
      */
+    private static final java.util.concurrent.atomic.AtomicBoolean scanning = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static volatile long lastScanAt = 0;
+
+    /** একসাথে একটাই স্ক্যান, আর ৪৫ সেকেন্ডে একবারের বেশি না (ফোন যেন ভারী না হয়) */
     public static void scanInbox(Context ctx) {
+        if (Build.VERSION.SDK_INT >= 23
+                && ctx.checkSelfPermission(Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) return;
+        if (android.os.SystemClock.elapsedRealtime() - lastScanAt < 45 * 1000L) return;
+        if (!scanning.compareAndSet(false, true)) return;
+        try {
+            lastScanAt = android.os.SystemClock.elapsedRealtime();
+            scanInboxNow(ctx);
+        } finally {
+            scanning.set(false);
+        }
+    }
+
+    private static void scanInboxNow(Context ctx) {
         if (Build.VERSION.SDK_INT >= 23
                 && ctx.checkSelfPermission(Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             return;

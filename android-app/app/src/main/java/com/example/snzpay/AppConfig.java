@@ -99,12 +99,26 @@ public final class AppConfig {
     }
 
     /** ওয়েবসাইট থেকে সেট করা লোগো (না থাকলে null → অ্যাপের নিজের লোগো দেখাবে) */
-    public static Bitmap getLogo(Context ctx) {
+    private static Bitmap logoCache = null;
+    private static long logoCacheStamp = 0;
+
+    /** লোগো ছোট করে (সর্বোচ্চ ~২০০px) একবারই পড়া — বড় ছবি পুরোটা মেমরিতে নিলে কম দামি ফোন ধীর হয়ে যায় */
+    public static synchronized Bitmap getLogo(Context ctx) {
         File f = new File(ctx.getFilesDir(), LOGO_FILE);
         if (!f.exists() || get(ctx).optString("logo_url", "").isEmpty()) return null;
+        if (logoCache != null && logoCacheStamp == f.lastModified()) return logoCache;
         try {
-            return BitmapFactory.decodeFile(f.getAbsolutePath());
-        } catch (Exception e) {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+            int sample = 1;
+            while (o.outWidth / (sample * 2) >= 200 && o.outHeight / (sample * 2) >= 200) sample *= 2;
+            BitmapFactory.Options o2 = new BitmapFactory.Options();
+            o2.inSampleSize = sample;
+            logoCache = BitmapFactory.decodeFile(f.getAbsolutePath(), o2);
+            logoCacheStamp = f.lastModified();
+            return logoCache;
+        } catch (Throwable e) {
             return null;
         }
     }
