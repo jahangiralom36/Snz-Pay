@@ -127,9 +127,10 @@ public class MainActivity extends Activity {
         if (tvLiveLogo != null) {
             ScaleAnimation pulse = new ScaleAnimation(0.92f, 1.08f, 0.92f, 1.08f,
                     Animation.RELATIVE_TO_SELF, 0.5f, Animation.RELATIVE_TO_SELF, 0.5f);
-            pulse.setDuration(1200);
+            // একবারই ছোট্ট নড়াচড়া — সারাক্ষণ চললে ফোন সারাক্ষণ স্ক্রিন আঁকতে থাকে (ভারী)
+            pulse.setDuration(600);
             pulse.setRepeatMode(Animation.REVERSE);
-            pulse.setRepeatCount(Animation.INFINITE);
+            pulse.setRepeatCount(1);
             tvLiveLogo.startAnimation(pulse);
         }
     }

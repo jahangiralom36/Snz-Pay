@@ -17,7 +17,7 @@ import android.view.animation.ScaleAnimation;
 import android.widget.TextView;
 
 /**
- * ওয়েবসাইটের মত প্রিমিয়াম ডার্ক পপআপ — পেছনে blur, নরম অ্যানিমেশন।
+ * ওয়েবসাইটের মত প্রিমিয়াম ডার্ক পপআপ — পেছনে অন্ধকার, নরম অ্যানিমেশন।
  *
  * ব্যবহার:
  *   new PremiumDialog(activity)
@@ -147,23 +147,16 @@ public class PremiumDialog {
         return this;
     }
 
-    /** যেকোনো Dialog কে প্রিমিয়াম স্টাইল দেয়: স্বচ্ছ ব্যাকগ্রাউন্ড, ডার্ক dim, Android 12+ এ blur */
+    /** যেকোনো Dialog কে প্রিমিয়াম স্টাইল দেয়: স্বচ্ছ ব্যাকগ্রাউন্ড + ডার্ক dim (হালকা, blur ছাড়া) */
     public static void styleWindow(Activity a, Dialog d, float widthRatio) {
         Window w = d.getWindow();
         if (w == null) return;
         w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         int width = (int) (a.getResources().getDisplayMetrics().widthPixels * widthRatio);
         w.setLayout(Math.min(width, SmsRow.dp(a, 420)), WindowManager.LayoutParams.WRAP_CONTENT);
+        // শুধু অন্ধকার পর্দা — blur নেই (blur ফোনের System UI কে ভারী করে, কম দামি ফোন আটকে যায়)
         w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-        if (Build.VERSION.SDK_INT >= 31) {
-            w.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND);
-            WindowManager.LayoutParams lp = w.getAttributes();
-            lp.setBlurBehindRadius(SmsRow.dp(a, 22));   // পেছনের স্ক্রিন ঝাপসা
-            lp.dimAmount = 0.55f;
-            w.setAttributes(lp);
-        } else {
-            w.setDimAmount(0.78f);                      // পুরনো ফোনে blur নেই → বেশি অন্ধকার
-        }
+        w.setDimAmount(0.75f);
     }
 
     public static void animateIn(View card) {
