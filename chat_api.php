@@ -73,7 +73,11 @@ if (!$isAdmin) {
         if ($body === '') chatOut(['status' => 'error', 'message' => 'Empty message']);
         $body = mb_substr($body, 0, 1500);
         if (!$thread || $thread['status'] !== 'open') {
-            $pdo->prepare("INSERT INTO chat_threads (user_id, status, agent_name, created_at, updated_at) VALUES (?, 'open', ?, NOW(), NOW())")->execute([$userId, snz_chat_pick_agent($set)]);
+            $cName = mb_substr(trim((string) ($_POST['name'] ?? '')), 0, 80);
+            $cEmail = mb_substr(trim((string) ($_POST['email'] ?? '')), 0, 120);
+            $cPhone = mb_substr(preg_replace('/[^0-9+\- ]/', '', (string) ($_POST['phone'] ?? '')), 0, 30);
+            $pdo->prepare("INSERT INTO chat_threads (user_id, status, agent_name, customer_name, customer_email, customer_phone, created_at, updated_at) VALUES (?, 'open', ?, ?, ?, ?, NOW(), NOW())")
+                ->execute([$userId, snz_chat_pick_agent($set), $cName ?: null, $cEmail ?: null, $cPhone ?: null]);
             $thread = chatThreadRow($pdo, $pdo->lastInsertId());
         }
         snz_chat_add($pdo, $thread['id'], 'user', $body);
@@ -118,9 +122,9 @@ if ($a === 'list') {
     $where = [];
     $args = [];
     if ($q !== '') {
-        $where[] = "(u.username LIKE ? OR u.email LIKE ? OR t.last_preview LIKE ? OR t.id = ? OR EXISTS (SELECT 1 FROM chat_messages m WHERE m.thread_id = t.id AND m.body LIKE ?))";
+        $where[] = "(u.username LIKE ? OR u.email LIKE ? OR t.customer_name LIKE ? OR t.customer_phone LIKE ? OR t.last_preview LIKE ? OR t.id = ? OR EXISTS (SELECT 1 FROM chat_messages m WHERE m.thread_id = t.id AND m.body LIKE ?))";
         $like = '%' . $q . '%';
-        array_push($args, $like, $like, $like, (int) ltrim($q, '#'), $like);
+        array_push($args, $like, $like, $like, $like, $like, (int) ltrim($q, '#'), $like);
     }
     if ($f === 'unseen') $where[] = "t.admin_unread > 0";
     if ($f === 'seen') $where[] = "t.admin_unread = 0";
@@ -137,7 +141,7 @@ if ($a === 'list') {
     foreach ($st->fetchAll() as $r) {
         $rows[] = [
             'id' => (int) $r['id'], 'user_id' => (int) $r['user_id'],
-            'username' => (string) ($r['username'] ?? 'Deleted user'), 'email' => (string) ($r['email'] ?? ''),
+            'username' => (string) (($r['customer_name'] ?? '') !== '' ? $r['customer_name'] : ($r['username'] ?? 'Deleted user')), 'email' => (string) ($r['email'] ?? ''),
             'status' => $r['status'], 'preview' => (string) $r['last_preview'], 'last_sender' => (string) $r['last_sender'],
             'reply_by' => (string) $r['last_reply_by'], 'unread' => (int) $r['admin_unread'], 'need' => (int) $r['needs_admin'],
             'ai_off' => (int) $r['ai_off'],
@@ -146,6 +150,13 @@ if ($a === 'list') {
     }
     $tot = $pdo->query("SELECT COUNT(*) FROM chat_threads WHERE admin_unread > 0")->fetchColumn();
     chatOut(['status' => 'success', 'threads' => $rows, 'unseen_total' => (int) $tot]);
+}
+
+if ($a === 'test') {
+    // ⚙️ Settings → "Test AI": আসল কী দিয়ে একবার চেষ্টা, ভুল থাকলে ঠিক কারণটা দেখাবে
+    $r = snz_chat_call_ai($set, 'You are a test. Reply with: OK', [['role' => 'user', 'content' => 'Say OK']]);
+    snz_chat_note_status($r['ok'], $r['error']);
+    chatOut($r['ok'] ? ['status' => 'success', 'message' => 'AI is working ✅ Reply: ' . mb_substr($r['text'], 0, 80)] : ['status' => 'error', 'message' => $r['error']]);
 }
 
 if ($a === 'unseen') {
@@ -166,7 +177,8 @@ if ($a === 'thread') {
              'thread' => ['id' => $tid, 'status' => $thread['status'], 'need' => (int) $thread['needs_admin'], 'ai_off' => (int) $thread['ai_off'],
                           'username' => $ur['username'], 'email' => $ur['email'], 'balance' => number_format((float) $ur['balance'], 2),
                           'closed_by' => (string) $thread['closed_by'], 'user_id' => (int) $thread['user_id'],
-                          'agent' => chatAgent($thread, $set), 'admin_name' => snz_chat_admin_name($set)],
+                          'agent' => chatAgent($thread, $set), 'admin_name' => snz_chat_admin_name($set),
+                          'name' => (string) ($thread['customer_name'] ?? ''), 'phone' => (string) ($thread['customer_phone'] ?? ''), 'cemail' => (string) ($thread['customer_email'] ?? '')],
              'messages' => snz_chat_messages($pdo, $tid, $after, 500)]);
 }
 

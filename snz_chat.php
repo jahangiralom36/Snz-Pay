@@ -43,7 +43,7 @@ function snz_chat_ensure(PDO $pdo) {
     if ($done) return;
     $done = true;
     $flag = __DIR__ . '/.db_chat_v1';
-    if (is_file($flag)) { snz_chat_ensure_v2($pdo); return; }
+    if (is_file($flag)) { snz_chat_ensure_v2($pdo); snz_chat_ensure_v3($pdo); return; }
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS `chat_threads` (
             `id` INT NOT NULL AUTO_INCREMENT,
@@ -76,6 +76,7 @@ function snz_chat_ensure(PDO $pdo) {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         @file_put_contents($flag, date('c'));
         snz_chat_ensure_v2($pdo);
+        snz_chat_ensure_v3($pdo);
     } catch (Throwable $e) {
         if (function_exists('snz_log_error')) snz_log_error('web', 'Live chat tables', $e->getMessage(), '', ['where' => 'snz_chat.php']);
     }
@@ -86,6 +87,16 @@ function snz_chat_ensure_v2(PDO $pdo) {
     $flag = __DIR__ . '/.db_chat_v2';
     if (is_file($flag)) return;
     try { $pdo->exec("ALTER TABLE `chat_threads` ADD COLUMN `agent_name` VARCHAR(40) NULL"); } catch (Throwable $e) {}
+    @file_put_contents($flag, date('c'));
+}
+
+/** v3: চ্যাট শুরুর ফর্মের নাম / ইমেইল / ফোন */
+function snz_chat_ensure_v3(PDO $pdo) {
+    $flag = __DIR__ . '/.db_chat_v3';
+    if (is_file($flag)) return;
+    foreach (["`customer_name` VARCHAR(80) NULL", "`customer_email` VARCHAR(120) NULL", "`customer_phone` VARCHAR(30) NULL"] as $col) {
+        try { $pdo->exec("ALTER TABLE `chat_threads` ADD COLUMN " . $col); } catch (Throwable $e) {}
+    }
     @file_put_contents($flag, date('c'));
 }
 
@@ -270,11 +281,13 @@ function snz_chat_call_ai(array $set, $system, array $messages) {
     $useFallback = $model !== 'claude-haiku-5-5';
     if ($useFallback) $body['fallbacks'] = 'default';  // কোনো উত্তর আটকে গেলে Anthropic নিজে অন্য মডেলে চালায়
 
-    for ($try = 0; $try < 2; $try++) {
+    $lastErr = 'AI request failed';
+    // ৪ ধাপে চেষ্টা: (১) সব সহ (২) fallback ছাড়া (৩) effort ছাড়া (৪) অন্য মডেলে
+    for ($try = 0; $try < 4; $try++) {
         $headers = [
             'content-type: application/json',
             'x-api-key: ' . trim($set['api_key']),
-            'anthropic-version: 2026-10-21',
+            'anthropic-version: ' . ($try >= 2 ? '2023-06-01' : '2026-10-21'),
         ];
         if (!empty($body['fallbacks'])) $headers[] = 'anthropic-beta: server-side-fallback-2026-07-01';
         $ch = curl_init(defined('SNZ_CHAT_API_URL') ? SNZ_CHAT_API_URL : 'https://api.anthropic.com/v1/messages');
@@ -290,25 +303,132 @@ function snz_chat_call_ai(array $set, $system, array $messages) {
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $cerr = curl_error($ch);
         curl_close($ch);
-        if ($res === false) return ['ok' => false, 'text' => '', 'error' => 'Could not reach AI server: ' . $cerr];
+        if ($res === false) { $lastErr = 'Could not reach api.anthropic.com from the server: ' . $cerr . ' (ask hosting to allow outgoing HTTPS to api.anthropic.com)'; break; }
         $j = json_decode((string) $res, true);
-        if ($code === 400 && !empty($body['fallbacks']) && stripos((string) $res, 'fallback') !== false) {
-            unset($body['fallbacks']);   // এই অ্যাকাউন্টে fallback চালু না থাকলে ছাড়াই আবার
-            continue;
+        if ($code === 200 && is_array($j)) {
+            if (($j['stop_reason'] ?? '') === 'refusal') return ['ok' => false, 'text' => '', 'error' => 'refusal'];
+            $text = '';
+            foreach ((array) ($j['content'] ?? []) as $b) {
+                if (($b['type'] ?? '') === 'text') $text .= (string) $b['text'];
+            }
+            $text = trim($text);
+            if ($text !== '') return ['ok' => true, 'text' => $text, 'error' => ''];
+            $lastErr = 'AI returned an empty reply';
+            if (($j['stop_reason'] ?? '') === 'max_tokens') { $body['max_tokens'] = 4000; continue; }
+            break;
         }
-        if ($code !== 200 || !is_array($j)) {
-            $m = is_array($j) ? (string) ($j['error']['message'] ?? '') : '';
-            return ['ok' => false, 'text' => '', 'error' => 'AI error HTTP ' . $code . ($m !== '' ? ': ' . $m : '')];
-        }
-        if (($j['stop_reason'] ?? '') === 'refusal') return ['ok' => false, 'text' => '', 'error' => 'refusal'];
-        $text = '';
-        foreach ((array) ($j['content'] ?? []) as $b) {
-            if (($b['type'] ?? '') === 'text') $text .= (string) $b['text'];
-        }
-        $text = trim($text);
-        return $text !== '' ? ['ok' => true, 'text' => $text, 'error' => ''] : ['ok' => false, 'text' => '', 'error' => 'AI returned an empty reply'];
+        $m = is_array($j) ? (string) ($j['error']['message'] ?? '') : substr((string) $res, 0, 200);
+        $lastErr = 'AI error HTTP ' . $code . ($m !== '' ? ': ' . $m : '');
+        if ($code === 401 || $code === 403) { $lastErr .= ' — API key is wrong or has no access/credit.'; break; }
+        if ($code === 429 || $code >= 500) { if ($try === 0) { usleep(800000); continue; } break; }
+        // 400/404: পুরনো/অন্য অ্যাকাউন্টে কোনো প্যারামিটার না চললে সেটা বাদ দিয়ে আবার
+        if ($try === 0) { unset($body['fallbacks']); continue; }
+        if ($try === 1) { unset($body['output_config']); continue; }
+        if ($try === 2 && $body['model'] !== 'claude-haiku-5-5') { $body['model'] = $body['model'] === 'claude-opus-5-5' ? 'claude-sonnet-5-5' : 'claude-haiku-5-5'; continue; }
+        break;
     }
-    return ['ok' => false, 'text' => '', 'error' => 'AI request failed'];
+    return ['ok' => false, 'text' => '', 'error' => $lastErr];
+}
+
+/** AI এর শেষ অবস্থা মনে রাখা (Admin → Messenger → Settings এ দেখায়) */
+function snz_chat_note_status($ok, $err = '') {
+    $f = snz_chat_settings_file();
+    $s = is_file($f) ? (json_decode((string) @file_get_contents($f), true) ?: []) : [];
+    if ($ok) { $s['last_ok_at'] = date('Y-m-d H:i:s'); }
+    else { $s['last_error'] = mb_substr((string) $err, 0, 400); $s['last_error_at'] = date('Y-m-d H:i:s'); }
+    @file_put_contents($f, json_encode($s, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
+// -------------------------------------------------------------------------
+// 🧠 AI ছাড়াও উত্তর: API key না থাকলে / AI কাজ না করলে সাধারণ প্রশ্নের উত্তর নিজেই দেবে
+// রিটার্ন: ['text' => ..., 'need' => bool, 'close' => bool] অথবা null
+// -------------------------------------------------------------------------
+function snz_chat_smart_reply(PDO $pdo, array $thread, $msg, $isFirst) {
+    $set = snz_chat_settings();
+    $agent = (string) (($thread['agent_name'] ?? '') !== '' ? $thread['agent_name'] : snz_chat_agent_list($set)[0]);
+    $base = snz_chat_base_url();
+    $t = mb_strtolower(trim((string) $msg));
+    $has = function ($re) use ($t) { return (bool) preg_match('/' . $re . '/iu', $t); };
+    $hello = $isFirst ? "আসসালামু আলাইকুম স্যার, আমি {$agent}, SNZPay থেকে বলছি। " : '';
+    $problem = $has('hoy ?ni|hoy ?nai|hosse ?na|hocche ?na|hoche ?na|ase ?ni|ashe ?ni|asheni|aseni|পাইনি|আসেনি|হয়নি|হচ্ছে না|হয় নাই|problem|প্রবলেম|সমস্যা|somossa|error|kaj kor(e|ch|s)e ?na|কাজ করছে না|not work|failed|fail');
+
+    if ($has('^((ok+|okay) ?(thanks?|thank you|tnx|thx|ধন্যবাদ)|ধন্যবাদ|dhonn?obad|thanks?|thank you|thanx|tnx|thx|bye|allah hafez|আল্লাহ হাফেজ|ar kichu lagbe na|আর কিছু লাগবে না)[\s!.।😊🙏]*$'))
+        return ['text' => snz_chat_close_text(), 'need' => false, 'close' => true];
+
+    if ($has('refund|ফেরত|ferot|ban|unban|ব্যান|reset|রিসেট|phone change|ফোন পরিবর্তন|new phone|নতুন ফোন|discount|ছাড়|admin|এডমিন|অ্যাডমিন|manush|মানুষ|human|call|কল'))
+        return ['text' => $hello . "জি স্যার, বিষয়টা আমাদের অ্যাডমিন টিমকে পাঠিয়ে দিয়েছি। কিছুক্ষণের মধ্যেই এখানে উত্তর পাবেন 🙏", 'need' => true, 'close' => false];
+
+    if ($has('deposit|ডিপোজিট|diposit|dipojit|add ?fund|fund|টাকা|taka|balance|ব্যালেন্স|ballance|trx|ট্রানজেকশন|transaction|bkash|বিকাশ|nagad|নগদ|rocket|রকেট|upay|binance|recharge|রিচার্জ|send money')) {
+        $pay = snz_chat_pay_methods_text();
+        if ($problem) {
+            return ['text' => $hello . "স্যার, চিন্তা করবেন না। আগে এগুলো একটু দেখে নিন:\n1. TrxID ঠিকমতো লিখেছেন কিনা (SMS থেকে কপি করে দিন)\n2. যে Amount পাঠিয়েছেন ঠিক সেটাই দিয়েছেন কিনা\n3. ৩ বার চেষ্টা করে না হলে রিকোয়েস্টটা অ্যাডমিনের কাছে Pending এ চলে যায়, অ্যাডমিন চেক করে ব্যালেন্স যোগ করে দেবেন।\n\nআপনার TrxID টা এখানে লিখে দিন, আমি অ্যাডমিন টিমকে দিয়ে চেক করিয়ে দিচ্ছি 🙏", 'need' => true, 'close' => false];
+        }
+        return ['text' => $hello . "ব্যালেন্স যোগ করতে স্যার:\n1. এই লিংকে যান: {$base}dashboard.php#add-fund\n2. পেমেন্ট মেথড বেছে নিচের নম্বরে টাকা পাঠান\n3. Amount আর TrxID লিখে Verify চাপুন — কয়েক সেকেন্ডেই ব্যালেন্স যোগ হবে ✅"
+            . ($pay !== '' ? "\n\nপেমেন্ট নম্বর:\n" . trim($pay) : ''), 'need' => false, 'close' => false];
+    }
+
+    if ($has('plan|প্ল্যান|প্লান|package|প্যাকেজ|price|প্রাইস|dam|দাম|koto|কত|buy|kinbo|kinte|কিনব|কিনতে|renew|রিনিউ|subscription|trial|ট্রায়াল|validity|মেয়াদ|meyad|expire')) {
+        $plans = '';
+        try {
+            foreach ($pdo->query("SELECT name, price, discount_percent, duration_hours FROM plans WHERE status = 'active' ORDER BY sort_order, id LIMIT 8")->fetchAll() as $p) {
+                $price = (float) $p['price'] * (1 - (float) $p['discount_percent'] / 100);
+                $h = (int) $p['duration_hours'];
+                $plans .= "• " . $p['name'] . " — " . ($price > 0 ? "৳" . number_format($price, 0) : "FREE") . " / " . ($h % 24 === 0 ? ($h / 24) . " দিন" : $h . " ঘণ্টা") . "\n";
+            }
+        } catch (Throwable $e) {}
+        return ['text' => $hello . "প্ল্যান কিনতে স্যার:\n1. আগে Add Funds থেকে ব্যালেন্স যোগ করুন: {$base}dashboard.php#add-fund\n2. তারপর প্ল্যান বেছে Buy চাপুন: {$base}dashboard.php#plans\n3. কেনার পর License Key পাবেন My Plans এ: {$base}dashboard.php#my-plan"
+            . ($plans !== '' ? "\n\nএখনকার প্ল্যান:\n" . trim($plans) : ''), 'need' => false, 'close' => false];
+    }
+
+    if ($has('app|অ্যাপ|এপ|apk|download|ডাউনলোড|install|ইনস্টল|login|লগইন|log in|license|লাইসেন্স|key|কী|sms ?(asche|ase|jacche) ?na|sms upload')) {
+        $txt = $hello . "অ্যাপ চালু করতে স্যার:\n1. অ্যাপ ডাউনলোড করুন: {$base}app-release.apk\n2. ইনস্টল করে SMS পারমিশন Allow দিন\n3. My Plans থেকে License Key কপি করে অ্যাপে লগইন করুন\n\nএকটা কী একটা ফোনেই চলে, একই ফোনে logout/login করা যায়। ব্যাটারি অপটিমাইজেশন বন্ধ আর ইন্টারনেট চালু রাখবেন।";
+        if ($problem) $txt .= "\n\nতারপরও লগইন না হলে কী এর মেয়াদ শেষ/ব্যান হয়েছে কিনা অ্যাডমিন চেক করে দেবেন — আমি টিমকে জানিয়ে দিয়েছি 🙏";
+        return ['text' => $txt, 'need' => $problem, 'close' => false];
+    }
+
+    if ($has('wallet|ওয়ালেট|sms|এসএমএস|permission|পারমিশন'))
+        return ['text' => $hello . "Wallet Setup থেকে ঠিক করে দিন অ্যাপ কোন কোন ওয়ালেটের (bKash/Nagad/...) SMS পড়বে: {$base}dashboard.php#wallet-setup\nনিজের SMS ফরম্যাট যোগ করতে: {$base}dashboard.php#custom-sms", 'need' => false, 'close' => false];
+
+    if ($has('brand|ব্র্যান্ড|api|এপিআই|bot|বট|telegram|integration|ইন্টিগ্রেশন|website|ওয়েবসাইট|developer|webhook|code|কোড'))
+        return ['text' => $hello . "নিজের ওয়েবসাইট/বটে SNZPay লাগাতে স্যার:\n1. Brands থেকে Brand API Key বানান: {$base}dashboard.php#brands\n2. Developer API তে কোড ও নিয়ম দেওয়া আছে: {$base}dashboard.php#developer\nকোথাও আটকে গেলে জানাবেন, সাহায্য করব 😊", 'need' => false, 'close' => false];
+
+    if ($has('link|লিংক|লিঙ্ক|url|site|সাইট|history|হিস্ট্রি|register|রেজিস্টার|account|একাউন্ট|অ্যাকাউন্ট'))
+        return ['text' => $hello . "দরকারি লিংক স্যার:\n• Dashboard: {$base}dashboard.php\n• Add Funds: {$base}dashboard.php#add-fund\n• Plans: {$base}dashboard.php#plans\n• My Plans: {$base}dashboard.php#my-plan\n• History: {$base}dashboard.php#history\n• App: {$base}app-release.apk\n• Developer API: {$base}dashboard.php#developer", 'need' => false, 'close' => false];
+
+    if ($has('^(hi+|hello+|hlw|hey|hii+|oi+|ওই|হাই|হ্যালো|salam|slm|assalamu|আসসালামু|সালাম|kemon (aso|achen|acho|asen)|কেমন আছ|bhai|ভাই|vai|sir|স্যার|কেউ আছেন|keu (asen|acen))'))
+        return ['text' => ($isFirst ? "আসসালামু আলাইকুম স্যার, আমি {$agent}, SNZPay থেকে বলছি। " : "জি স্যার, আমি আছি 😊 ") . "আলহামদুলিল্লাহ ভালো আছি। বলুন স্যার, কিভাবে সাহায্য করতে পারি? (ডিপোজিট, প্ল্যান, অ্যাপ লগইন, API — যেকোনো বিষয়ে)", 'need' => false, 'close' => false];
+
+    return null;
+}
+
+
+/** AI ছাড়া উত্তর (স্মার্ট রিপ্লাই → না মিললে অ্যাডমিনের কাছে) */
+function snz_chat_fallback_reply(PDO $pdo, array $thread, $aiFailed) {
+    $tid = (int) $thread['id'];
+    $set = snz_chat_settings();
+    $pause = max(0, (int) $set['admin_pause_min']);
+    $adminActive = !empty($thread['admin_active_at']) && strtotime($thread['admin_active_at']) > time() - $pause * 60;
+    $lq = $pdo->prepare("SELECT body FROM chat_messages WHERE thread_id = ? AND sender = 'user' ORDER BY id DESC LIMIT 1");
+    $lq->execute([$tid]);
+    $last = (string) $lq->fetchColumn();
+    $cq = $pdo->prepare("SELECT COUNT(*) FROM chat_messages WHERE thread_id = ? AND sender IN ('ai','admin')");
+    $cq->execute([$tid]);
+    $isFirst = (int) $cq->fetchColumn() === 0;
+    $sr = snz_chat_smart_reply($pdo, $thread, $last, $isFirst);
+    if ($adminActive && !($sr && $sr['close'])) return 'skipped';
+    if (!$sr) {
+        // বুঝতে পারেনি → অ্যাডমিনের জন্য রেখে দেওয়া (১০ মিনিটে একবারই জানাবে)
+        $pdo->prepare("UPDATE chat_threads SET needs_admin = 1 WHERE id = ?")->execute([$tid]);
+        $rq = $pdo->prepare("SELECT COUNT(*) FROM chat_messages WHERE thread_id = ? AND sender = 'ai' AND body LIKE '%টিমকে পাঠিয়ে%' AND created_at > NOW() - INTERVAL 10 MINUTE");
+        $rq->execute([$tid]);
+        if ((int) $rq->fetchColumn()) return 'failed';
+        $agent = (string) (($thread['agent_name'] ?? '') !== '' ? $thread['agent_name'] : snz_chat_agent_list($set)[0]);
+        $sr = ['text' => ($isFirst ? "আসসালামু আলাইকুম স্যার, আমি {$agent}, SNZPay থেকে বলছি। " : '') . "জি স্যার, আপনার বিষয়টা টিমকে পাঠিয়ে দিয়েছি — কিছুক্ষণের মধ্যেই এখানে বিস্তারিত উত্তর পাবেন 🙏", 'need' => true, 'close' => false];
+    }
+    snz_chat_add($pdo, $tid, 'ai', $sr['text']);
+    if ($sr['need']) $pdo->prepare("UPDATE chat_threads SET needs_admin = 1 WHERE id = ?")->execute([$tid]);
+    if ($sr['close']) { snz_chat_close($pdo, $tid, 'ai'); return 'closed'; }
+    return 'ai';
 }
 
 /**
@@ -318,6 +438,8 @@ function snz_chat_call_ai(array $set, $system, array $messages) {
 function snz_chat_ai_reply(PDO $pdo, array $thread) {
     $set = snz_chat_settings();
     if (empty($set['ai_enabled']) || !empty($thread['ai_off'])) return 'skipped';
+    // AI key নেই → সরাসরি নিজের স্মার্ট উত্তর
+    if (trim((string) $set['api_key']) === '') return snz_chat_fallback_reply($pdo, $thread, false);
     // অ্যাডমিন এই চ্যাটে সক্রিয় থাকলে AI চুপ
     $pause = max(0, (int) $set['admin_pause_min']);
     $adminActive = !empty($thread['admin_active_at']) && strtotime($thread['admin_active_at']) > time() - $pause * 60;
@@ -347,20 +469,15 @@ function snz_chat_ai_reply(PDO $pdo, array $thread) {
     if (!$msgs || $msgs[count($msgs) - 1]['role'] !== 'user') return 'skipped';
 
     $r = snz_chat_call_ai($set, snz_chat_system_prompt($pdo, (int) $thread['user_id'], $set, (string) ($thread['agent_name'] ?? '')), $msgs);
-    if (!$r['ok'] && $adminActive) return 'skipped';
     if (!$r['ok']) {
-        if ($r['error'] !== 'refusal' && function_exists('snz_log_error')) {
-            snz_log_error('web', 'Live chat AI failed', $r['error'], '', ['where' => 'Live Chat']);
+        if ($r['error'] !== 'refusal') {
+            snz_chat_note_status(false, $r['error']);
+            if (function_exists('snz_log_error')) snz_log_error('web', 'Live chat AI failed', $r['error'], '', ['where' => 'Live Chat']);
         }
-        // AI না পারলে একবার জানিয়ে দেওয়া, অ্যাডমিনের কাছে পাঠানো
-        $pdo->prepare("UPDATE chat_threads SET needs_admin = 1 WHERE id = ?")->execute([$tid]);
-        $lastSys = $pdo->prepare("SELECT COUNT(*) FROM chat_messages WHERE thread_id = ? AND sender = 'system' AND created_at > NOW() - INTERVAL 30 MINUTE");
-        $lastSys->execute([$tid]);
-        if (!(int) $lastSys->fetchColumn()) {
-            snz_chat_add($pdo, $tid, 'system', "আপনার মেসেজ পেয়েছি স্যার। আমাদের সাপোর্ট টিম খুব শীঘ্রই এখানে উত্তর দেবে। 🙏");
-        }
-        return 'failed';
+        if ($adminActive) return 'skipped';
+        return snz_chat_fallback_reply($pdo, $thread, true);   // AI না পারলেও উত্তর যাবে
     }
+    snz_chat_note_status(true);
     $text = $r['text'];
     $close = strpos($text, '[[CLOSE_CHAT]]') !== false;
     if ($adminActive && !$close) return 'skipped';   // অ্যাডমিন থাকা অবস্থায় AI শুধু বিদায়ের উত্তর দেবে
