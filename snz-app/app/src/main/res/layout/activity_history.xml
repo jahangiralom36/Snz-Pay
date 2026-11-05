@@ -82,24 +82,33 @@
             android:textStyle="bold" />
     </LinearLayout>
 
-    <ListView
-        android:id="@+id/listAll"
+    <!-- সব SMS — বক্সের ভেতরেই scroll -->
+    <LinearLayout
+        android:id="@+id/histCard"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_marginTop="10dp"
+        android:layout_marginBottom="12dp"
         android:layout_weight="1"
-        android:divider="@android:color/transparent"
-        android:dividerHeight="8dp"
-        android:clipToPadding="false"
-        android:paddingBottom="16dp" />
+        android:orientation="vertical"
+        android:padding="10dp">
 
-    <TextView
-        android:id="@+id/tvNone"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:padding="30dp"
-        android:text="No SMS here."
-        android:textColor="@color/muted"
-        android:visibility="gone" />
+        <ListView
+            android:id="@+id/listAll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:divider="@android:color/transparent"
+            android:dividerHeight="0dp"
+            android:fadeScrollbars="true" />
+
+        <TextView
+            android:id="@+id/tvNone"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:padding="30dp"
+            android:text="No SMS here."
+            android:textColor="@color/muted"
+            android:visibility="gone" />
+    </LinearLayout>
 </LinearLayout>

@@ -49,6 +49,23 @@ public final class Ui {
         v.requestApplyInsets();
     }
 
+    /**
+     * পুরো window এর জন্য: স্ট্যাটাস বার / নেভিগেশন বারের জায়গা target এর padding হিসেবে দেওয়া।
+     * window নিজে (DecorView) ইনসেট নেয় — তাই Activity আর পুরো-স্ক্রিন Dialog দুই জায়গায়, সব Android এ কাজ করে।
+     */
+    @SuppressWarnings("deprecation")
+    public static void fitWindow(Window w, final View target) {
+        if (w == null || target == null) return;
+        final int l = target.getPaddingLeft(), t = target.getPaddingTop(), r = target.getPaddingRight(), b = target.getPaddingBottom();
+        View decor = w.getDecorView();
+        decor.setOnApplyWindowInsetsListener((v, in) -> {
+            target.setPadding(l + in.getSystemWindowInsetLeft(), t + in.getSystemWindowInsetTop(),
+                    r + in.getSystemWindowInsetRight(), b + in.getSystemWindowInsetBottom());
+            return in.consumeSystemWindowInsets();
+        });
+        decor.requestApplyInsets();
+    }
+
     /** হালকা ব্যাকগ্রাউন্ডে স্ট্যাটাস বার / নেভিগেশন বারের আইকন কালো */
     @SuppressWarnings("deprecation")
     public static void lightBars(Window w) {

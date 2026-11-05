@@ -28,7 +28,8 @@ public class LoginActivity extends Activity {
         etKey = findViewById(R.id.etKey);
         btnLogin = findViewById(R.id.btnLogin);
         tvMsg = findViewById(R.id.tvMsg);
-        Ui.fitSystemBars(findViewById(R.id.loginRoot));
+        Ui.fitWindow(getWindow(), findViewById(R.id.loginRoot));
+        Ui.lightBars(getWindow());
 
         Ui.box(findViewById(R.id.loginCard), Ui.CARD, Ui.LINE, 22);
         Ui.box(etKey, Ui.INPUT, Ui.LINE, 14);

@@ -60,7 +60,9 @@ public class MainActivity extends Activity {
         Ui.box(findViewById(R.id.boxToday), Ui.CARD, Ui.LINE, 16);
         Ui.box(findViewById(R.id.boxCount), Ui.CARD, Ui.LINE, 16);
         Ui.box(btnFix, Ui.BRAND, null, 12);
-        Ui.fitSystemBars(findViewById(R.id.mainRoot));
+        Ui.fitWindow(getWindow(), findViewById(R.id.mainRoot));
+        Ui.lightBars(getWindow());
+        Ui.box(findViewById(R.id.listCard), Ui.CARD, Ui.LINE, 18);
         findViewById(R.id.btnMenu).setOnClickListener(v -> openMenu());
 
         SyncJob.schedulePeriodic(this);
@@ -159,6 +161,8 @@ public class MainActivity extends Activity {
         List<Db.Row> rows = db.today(50);
         list.removeAllViews();
         tvEmpty.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
+        TextView cnt = findViewById(R.id.tvListCount);
+        if (cnt != null) cnt.setText(rows.size() + " SMS");
         for (Db.Row r : rows) {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
             lp.bottomMargin = Ui.dp(this, 8);
@@ -166,28 +170,96 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** একটা SMS এর কার্ড (History স্ক্রিনেও এটাই) */
+    /** wallet অনুযায়ী রঙ */
+    static String walletColor(String m) {
+        String u = m == null ? "" : m.toUpperCase(Locale.ROOT);
+        if (u.contains("BKASH")) return "#E2136E";
+        if (u.contains("NAGAD")) return "#EC1C24";
+        if (u.contains("ROCKET")) return "#8C3494";
+        if (u.contains("UPAY")) return "#D19C00";
+        if (u.contains("QR")) return "#0284C7";
+        if (u.contains("BINANCE")) return "#C99400";
+        return Ui.BRAND;
+    }
+
+    static String walletName(String m) {
+        String u = m == null ? "" : m.toUpperCase(Locale.ROOT);
+        if (u.contains("BKASH")) return "bKash";
+        if (u.contains("NAGAD")) return "Nagad";
+        if (u.contains("ROCKET")) return "Rocket";
+        if (u.contains("UPAY")) return "Upay";
+        if (u.contains("QR")) return "Bangla QR";
+        if (u.contains("BINANCE")) return "Binance";
+        return m == null || m.isEmpty() ? "Payment" : m;
+    }
+
+    /**
+     * একটা SMS এর কার্ড (মূল স্ক্রিন + History):
+     * [রঙিন ব্যাজ]  bKash                Tk 120
+     *               DK552XX043 • 12:37 PM   ✓ Uploaded
+     */
     static View smsRow(android.content.Context c, Db.Row r) {
         LinearLayout row = new LinearLayout(c);
-        row.setOrientation(LinearLayout.VERTICAL);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
         int p = Ui.dp(c, 12);
         row.setPadding(p, p, p, p);
-        Ui.box(row, Ui.CARD, Ui.LINE, 14);
+        Ui.box(row, Ui.INPUT, Ui.LINE, 14);
+        String col = walletColor(r.method);
 
-        TextView t1 = new TextView(c);
-        t1.setText(r.method + "  •  Tk " + fmt(r.amount));
-        t1.setTextColor(Color.parseColor(Ui.TEXT));
-        t1.setTextSize(15);
-        t1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        // বামে wallet ব্যাজ
+        TextView badge = new TextView(c);
+        String name = walletName(r.method);
+        badge.setText(name.substring(0, 1).toUpperCase(Locale.ROOT));
+        badge.setGravity(android.view.Gravity.CENTER);
+        badge.setTextColor(Color.WHITE);
+        badge.setTextSize(17);
+        badge.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        Ui.box(badge, col, null, 12);
+        int bs = Ui.dp(c, 42);
+        row.addView(badge, new LinearLayout.LayoutParams(bs, bs));
 
-        TextView t2 = new TextView(c);
-        String st = r.status == Db.SENT ? "✓ Uploaded" : r.status == Db.REJECTED ? "✕ Not accepted" : "⏳ Waiting";
-        t2.setText(r.trx + "  •  " + new SimpleDateFormat("dd MMM, hh:mm a", Locale.US).format(new Date(r.time)) + "  •  " + st);
-        t2.setTextColor(Color.parseColor(r.status == Db.SENT ? Ui.GREEN : r.status == Db.REJECTED ? Ui.RED : Ui.AMBER));
-        t2.setTextSize(12);
+        // মাঝে নাম + TrxID/সময়
+        LinearLayout mid = new LinearLayout(c);
+        mid.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams midLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        midLp.leftMargin = Ui.dp(c, 12);
+        TextView tName = new TextView(c);
+        tName.setText(name);
+        tName.setTextColor(Color.parseColor(Ui.TEXT));
+        tName.setTextSize(15);
+        tName.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        TextView tSub = new TextView(c);
+        tSub.setText(r.trx + "  •  " + new SimpleDateFormat("dd MMM, hh:mm a", Locale.US).format(new Date(r.time)));
+        tSub.setTextColor(Color.parseColor(Ui.MUTED));
+        tSub.setTextSize(12);
+        tSub.setSingleLine(true);
+        tSub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        mid.addView(tName);
+        mid.addView(tSub);
+        row.addView(mid, midLp);
 
-        row.addView(t1);
-        row.addView(t2);
+        // ডানে টাকা + অবস্থা
+        LinearLayout right = new LinearLayout(c);
+        right.setOrientation(LinearLayout.VERTICAL);
+        right.setGravity(android.view.Gravity.END);
+        TextView tAmt = new TextView(c);
+        tAmt.setText("Tk " + fmt(r.amount));
+        tAmt.setTextColor(Color.parseColor(Ui.TEXT));
+        tAmt.setTextSize(16);
+        tAmt.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        tAmt.setGravity(android.view.Gravity.END);
+        TextView tSt = new TextView(c);
+        tSt.setText(r.status == Db.SENT ? "✓ Uploaded" : r.status == Db.REJECTED ? "✕ Not accepted" : "⏳ Waiting");
+        tSt.setTextColor(Color.parseColor(r.status == Db.SENT ? Ui.GREEN : r.status == Db.REJECTED ? Ui.RED : Ui.AMBER));
+        tSt.setTextSize(11);
+        tSt.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        tSt.setGravity(android.view.Gravity.END);
+        right.addView(tAmt);
+        right.addView(tSt);
+        LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(-2, -2);
+        rLp.leftMargin = Ui.dp(c, 8);
+        row.addView(right, rLp);
         return row;
     }
 
@@ -215,14 +287,16 @@ public class MainActivity extends Activity {
     private void openHistory() {
         final android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_Material_Light_NoActionBar);
         d.setContentView(R.layout.activity_history);
-        Ui.fitSystemBars(d.findViewById(R.id.historyRoot));   // ← বাটন যেন স্ট্যাটাস বারের নিচে থাকে
+
         android.view.Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.parseColor(Ui.BG)));
             w.setStatusBarColor(Color.parseColor(Ui.BG));
             w.setNavigationBarColor(Color.parseColor(Ui.BG));
             Ui.lightBars(w);
+            Ui.fitWindow(w, d.findViewById(R.id.historyRoot));   // ← বাটন যেন স্ট্যাটাস বারের নিচে থাকে
         }
+        Ui.box(d.findViewById(R.id.histCard), Ui.CARD, Ui.LINE, 18);
         d.findViewById(R.id.btnBack).setOnClickListener(v -> d.dismiss());
         Ui.box(d.findViewById(R.id.tabs), Ui.INPUT, Ui.LINE, 14);
         final TextView tabAll = d.findViewById(R.id.tabAll), tabSent = d.findViewById(R.id.tabSent), tabWait = d.findViewById(R.id.tabWait);
@@ -246,6 +320,7 @@ public class MainActivity extends Activity {
             histRows.addAll(Db.get(this).history(cur[0], 500));
             ad.notifyDataSetChanged();
             tvNone.setVisibility(histRows.isEmpty() ? View.VISIBLE : View.GONE);
+            d.findViewById(R.id.listAll).setVisibility(histRows.isEmpty() ? View.GONE : View.VISIBLE);
             tvTotal.setText(histRows.size() + " SMS");
             tab(tabAll, cur[0] == -1);
             tab(tabSent, cur[0] == Db.SENT);
