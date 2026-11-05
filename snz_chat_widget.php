@@ -75,7 +75,7 @@ $snzChatUser = htmlspecialchars((string) ($user['username'] ?? ''));
 </style>
 
 <div id="snzChatToast" onclick="snzChatOpen()">
-    <div class="snzc-av" id="snzToastAv" style="width:38px;height:38px;font-size:16px"><i class="fa-solid fa-robot"></i></div>
+    <div class="snzc-av" id="snzToastAv" style="width:38px;height:38px;font-size:16px">S</div>
     <div style="min-width:0">
         <div class="tt" id="snzToastTitle">New reply</div>
         <div class="tm" id="snzToastMsg"></div>
@@ -88,7 +88,7 @@ $snzChatUser = htmlspecialchars((string) ($user['username'] ?? ''));
         <div class="snzc-av"><i class="fa-solid fa-headset"></i></div>
         <div style="min-width:0">
             <div class="snzc-title">Live Support</div>
-            <div class="snzc-sub" id="snzChatSub"><?= $snzChatName ?> • Online</div>
+            <div class="snzc-sub" id="snzChatSub">SNZPay Support Team • Online</div>
         </div>
         <div class="snzc-hbtn">
             <button type="button" id="snzChatEndBtn" title="End chat" onclick="snzChatEnd()" style="display:none"><i class="fa-solid fa-power-off"></i></button>
@@ -118,7 +118,7 @@ $snzChatUser = htmlspecialchars((string) ($user['username'] ?? ''));
             <p><i class="fa-solid fa-circle-check" style="color:#00D89A"></i> এই চ্যাটটি বন্ধ হয়েছে।</p>
             <button type="button" onclick="snzChatNew()"><i class="fa-solid fa-plus"></i> নতুন চ্যাট শুরু করুন</button>
         </div>
-        <div class="snzc-note">AI অ্যাসিস্ট্যান্ট বা আমাদের সাপোর্ট টিম উত্তর দেবে</div>
+        <div class="snzc-note">SNZPay সাপোর্ট টিম সাধারণত কয়েক সেকেন্ডেই উত্তর দেয়</div>
     </div>
 </div>
 
@@ -131,7 +131,7 @@ $snzChatUser = htmlspecialchars((string) ($user['username'] ?? ''));
 (function () {
     const API = 'chat_api.php';
     const CSRF = <?= json_encode($CSRF) ?>;
-    const BOT = <?= json_encode((string) $snzChatSet['bot_name'], JSON_UNESCAPED_UNICODE) ?>;
+    let AGENT = '', ADMIN = '';
     let open = false, lastId = 0, threadStatus = null, threadId = 0, ignoreThread = 0, tick = 0, busy = false, sending = false, firstLoad = true, toastTimer = null, unread = 0;
     const seen = new Set();
     const $ = id => document.getElementById(id);
@@ -159,13 +159,18 @@ $snzChatUser = htmlspecialchars((string) ($user['username'] ?? ''));
         } else {
             const me = m.sender === 'user';
             el = document.createElement('div');
-            el.className = 'snzc-row ' + (me ? 'me' : 'them ' + m.sender);
-            const who = me ? '' : (m.sender === 'admin'
-                ? '<div class="snzc-who admin"><i class="fa-solid fa-user-shield"></i> Support Admin</div>'
-                : '<div class="snzc-who ai"><i class="fa-solid fa-robot"></i> ' + esc(BOT) + '</div>');
+            el.className = 'snzc-row ' + (me ? 'me' : 'them');
+            const who = me ? '' : '<div class="snzc-who ai"><i class="fa-solid fa-circle-user"></i> ' + esc(nameOf(m)) + ' <span style="color:#64748b;font-weight:700">• SNZPay</span></div>';
             el.innerHTML = who + '<div class="snzc-b">' + fmt(m.body) + '</div><div class="snzc-t">' + esc(m.time) + '</div>';
         }
         body.insertBefore(el, typing);
+    }
+
+    function nameOf(m) { return m.sender === 'admin' ? (ADMIN || AGENT || 'SNZPay Support') : (AGENT || 'SNZPay Support'); }
+    function setPeople(t) {
+        if (!t) return;
+        AGENT = t.agent || AGENT; ADMIN = t.admin || ADMIN;
+        $('snzChatSub').textContent = (AGENT ? AGENT + ' • ' : '') + 'SNZPay Support • Online';
     }
 
     function setStatus(st) {
@@ -184,10 +189,11 @@ $snzChatUser = htmlspecialchars((string) ($user['username'] ?? ''));
     }
 
     function toast(m) {
-        const isAdmin = m.sender === 'admin';
-        $('snzToastTitle').innerHTML = isAdmin ? '<i class="fa-solid fa-user-shield" style="color:#00D89A"></i> Support Admin' : (m.sender === 'system' ? 'Live Support' : '<i class="fa-solid fa-robot" style="color:#00D9FF"></i> ' + esc(BOT));
+        const nm = m.sender === 'system' ? 'SNZPay Support' : nameOf(m);
+        $('snzToastTitle').innerHTML = esc(nm) + ' <span style="color:#7dd3fc;font-weight:700;font-size:11px">• SNZPay Support</span>';
         $('snzToastMsg').textContent = m.body;
-        $('snzToastAv').innerHTML = isAdmin ? '<i class="fa-solid fa-user-shield"></i>' : '<i class="fa-solid fa-robot"></i>';
+        $('snzToastAv').textContent = nm.charAt(0).toUpperCase();
+        $('snzToastAv').style.fontWeight = '900';
         $('snzChatToast').classList.add('show');
         clearTimeout(toastTimer);
         toastTimer = setTimeout(snzToastHide, 8000);
@@ -208,6 +214,7 @@ $snzChatUser = htmlspecialchars((string) ($user['username'] ?? ''));
             }
             if (threadId && d.thread.id !== threadId) resetView();
             threadId = d.thread.id;
+            setPeople(d.thread);
             let newest = null;
             d.messages.forEach(m => { if (!seen.has(m.id)) { render(m); if (m.sender !== 'user') newest = m; } });
             setStatus(d.thread.status);
@@ -224,7 +231,8 @@ $snzChatUser = htmlspecialchars((string) ($user['username'] ?? ''));
 
     function resetView() {
         body.querySelectorAll('.snzc-row,.snzc-sys').forEach(e => e.remove());
-        seen.clear(); lastId = 0; threadStatus = null; threadId = 0;
+        seen.clear(); lastId = 0; threadStatus = null; threadId = 0; AGENT = '';
+        $('snzChatSub').textContent = 'SNZPay Support Team • Online';
         $('snzChatWelcome').style.display = '';
         setStatus(null);
     }
@@ -284,6 +292,7 @@ $snzChatUser = htmlspecialchars((string) ($user['username'] ?? ''));
             } else {
                 if (d.thread.id !== threadId) { body.querySelectorAll('.snzc-row,.snzc-sys').forEach(e => e.remove()); seen.clear(); }
                 threadId = d.thread.id; ignoreThread = 0;
+                setPeople(d.thread);
                 (d.messages || []).forEach(render);
                 setStatus(d.thread.status);
                 markSeen();

@@ -49,6 +49,10 @@ if (!$pdo) chatOut(['status' => 'error', 'message' => 'Database error'], 500);
 snz_chat_ensure($pdo);
 $set = snz_chat_settings();
 
+function chatAgent($thread, $set) {
+    return (string) (($thread['agent_name'] ?? '') !== '' ? $thread['agent_name'] : snz_chat_agent_list($set)[0]);
+}
+
 function chatThreadRow(PDO $pdo, $id) {
     $q = $pdo->prepare("SELECT * FROM chat_threads WHERE id = ?");
     $q->execute([(int) $id]);
@@ -69,14 +73,14 @@ if (!$isAdmin) {
         if ($body === '') chatOut(['status' => 'error', 'message' => 'Empty message']);
         $body = mb_substr($body, 0, 1500);
         if (!$thread || $thread['status'] !== 'open') {
-            $pdo->prepare("INSERT INTO chat_threads (user_id, status, created_at, updated_at) VALUES (?, 'open', NOW(), NOW())")->execute([$userId]);
+            $pdo->prepare("INSERT INTO chat_threads (user_id, status, agent_name, created_at, updated_at) VALUES (?, 'open', ?, NOW(), NOW())")->execute([$userId, snz_chat_pick_agent($set)]);
             $thread = chatThreadRow($pdo, $pdo->lastInsertId());
         }
         snz_chat_add($pdo, $thread['id'], 'user', $body);
         $result = snz_chat_ai_reply($pdo, $thread);
         $thread = chatThreadRow($pdo, $thread['id']);
         $after = (int) ($_POST['after'] ?? 0);
-        chatOut(['status' => 'success', 'result' => $result, 'thread' => ['id' => (int) $thread['id'], 'status' => $thread['status']],
+        chatOut(['status' => 'success', 'result' => $result, 'thread' => ['id' => (int) $thread['id'], 'status' => $thread['status'], 'agent' => chatAgent($thread, $set), 'admin' => snz_chat_admin_name($set)],
                  'messages' => snz_chat_messages($pdo, $thread['id'], $after)]);
     }
 
@@ -99,7 +103,7 @@ if (!$isAdmin) {
         chatOut(['status' => 'success', 'thread' => null, 'messages' => [], 'unread' => 0, 'ai' => !empty($set['ai_enabled'])]);
     }
     chatOut(['status' => 'success',
-             'thread' => ['id' => (int) $thread['id'], 'status' => $thread['status']],
+             'thread' => ['id' => (int) $thread['id'], 'status' => $thread['status'], 'agent' => chatAgent($thread, $set), 'admin' => snz_chat_admin_name($set)],
              'messages' => snz_chat_messages($pdo, $thread['id'], $after),
              'unread' => (int) $thread['user_unread'],
              'ai' => !empty($set['ai_enabled']) && empty($thread['ai_off'])]);
@@ -161,7 +165,8 @@ if ($a === 'thread') {
     chatOut(['status' => 'success',
              'thread' => ['id' => $tid, 'status' => $thread['status'], 'need' => (int) $thread['needs_admin'], 'ai_off' => (int) $thread['ai_off'],
                           'username' => $ur['username'], 'email' => $ur['email'], 'balance' => number_format((float) $ur['balance'], 2),
-                          'closed_by' => (string) $thread['closed_by'], 'user_id' => (int) $thread['user_id']],
+                          'closed_by' => (string) $thread['closed_by'], 'user_id' => (int) $thread['user_id'],
+                          'agent' => chatAgent($thread, $set), 'admin_name' => snz_chat_admin_name($set)],
              'messages' => snz_chat_messages($pdo, $tid, $after, 500)]);
 }
 

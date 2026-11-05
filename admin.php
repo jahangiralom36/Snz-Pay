@@ -1006,7 +1006,8 @@ if ($chatOn) {
             'enabled'    => !empty($_POST['chat_enabled']) ? 1 : 0,
             'ai_enabled' => !empty($_POST['chat_ai_enabled']) ? 1 : 0,
             'model'      => array_key_exists($_POST['chat_model'] ?? '', snz_chat_models()) ? $_POST['chat_model'] : 'claude-opus-5-5',
-            'bot_name'   => mb_substr(trim((string) ($_POST['chat_bot_name'] ?? '')), 0, 40) ?: 'SNZPay Assistant',
+            'agent_names' => mb_substr(trim((string) ($_POST['chat_agent_names'] ?? '')), 0, 300) ?: 'Mahid, Nahid, Magid, Sihan, Raihan, Sayed',
+            'admin_name' => mb_substr(trim((string) ($_POST['chat_admin_name'] ?? '')), 0, 30) ?: 'Mahid',
             'extra_info' => mb_substr(trim((string) ($_POST['chat_extra_info'] ?? '')), 0, 4000),
             'admin_pause_min' => max(0, min(240, (int) ($_POST['chat_pause'] ?? 15))),
         ];
@@ -1885,8 +1886,12 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
                         </select>
                     </div>
                     <div>
-                        <label class="block text-[11px] font-bold text-slate-300 mb-1">Assistant name</label>
-                        <input type="text" name="chat_bot_name" maxlength="40" value="<?= htmlspecialchars($chatSet['bot_name']) ?>" class="w-full bg-[#020817] border border-[#0d2a63] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#00D9FF]">
+                        <label class="block text-[11px] font-bold text-slate-300 mb-1">Support names (AI uses one per chat, comma separated)</label>
+                        <input type="text" name="chat_agent_names" maxlength="300" value="<?= htmlspecialchars($chatSet['agent_names']) ?>" placeholder="Mahid, Nahid, Magid, Sihan, Raihan, Sayed" class="w-full bg-[#020817] border border-[#0d2a63] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#00D9FF]">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-300 mb-1">Your name in chat (when you reply)</label>
+                        <input type="text" name="chat_admin_name" maxlength="30" value="<?= htmlspecialchars($chatSet['admin_name']) ?>" placeholder="Mahid" class="w-full bg-[#020817] border border-[#0d2a63] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#00D9FF]">
                     </div>
                     <div>
                         <label class="block text-[11px] font-bold text-slate-300 mb-1">After admin replies, AI stays silent for (minutes)</label>
@@ -1955,7 +1960,7 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
                     const isUser = m.sender === 'user';
                     el.className = 'msg-row ' + (isUser ? 'u' : 'r ' + m.sender);
                     const who = isUser ? '<div class="msg-who" style="color:#cbd5e1"><i class="fa-solid fa-user"></i> ' + esc(curThread ? curThread.username : 'User') + '</div>'
-                        : (m.sender === 'ai' ? '<div class="msg-who" style="color:#00D9FF"><i class="fa-solid fa-robot"></i> AI answered</div>' : '<div class="msg-who" style="color:#00D89A"><i class="fa-solid fa-user-shield"></i> Admin (you)</div>');
+                        : (m.sender === 'ai' ? '<div class="msg-who" style="color:#00D9FF"><i class="fa-solid fa-robot"></i> AI answered (as ' + esc(curThread ? curThread.agent : '') + ')</div>' : '<div class="msg-who" style="color:#00D89A"><i class="fa-solid fa-user-shield"></i> Admin (you, as ' + esc(curThread ? curThread.admin_name : '') + ')</div>');
                     el.innerHTML = who + '<div class="msg-b">' + fmt(m.body) + '</div><div class="msg-t">' + esc(m.time) + '</div>';
                 }
                 B.appendChild(el);
@@ -1965,7 +1970,7 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
                 curThread = t;
                 $('msgAv').textContent = (t.username || '?').charAt(0).toUpperCase();
                 $('msgUser').textContent = t.username + (t.status === 'closed' ? '  •  Closed' : '');
-                $('msgUserSub').textContent = (t.email || '') + '  •  Balance ৳' + t.balance + '  •  User #' + t.user_id;
+                $('msgUserSub').textContent = (t.email || '') + '  •  Balance ৳' + t.balance + '  •  User #' + t.user_id + '  •  User sees: ' + t.agent;
                 $('msgAiBtn').innerHTML = t.ai_off ? '<i class="fa-solid fa-robot"></i> AI: OFF' : '<i class="fa-solid fa-robot"></i> AI: ON';
                 $('msgAiBtn').style.color = t.ai_off ? '#FB7185' : '#00D9FF';
                 $('msgCloseBtn').style.display = t.status === 'open' ? '' : 'none';

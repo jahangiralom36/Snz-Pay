@@ -222,6 +222,7 @@ CREATE TABLE IF NOT EXISTS `chat_threads` (
   `user_unread` INT NOT NULL DEFAULT 0,
   `needs_admin` TINYINT(1) NOT NULL DEFAULT 0,
   `ai_off` TINYINT(1) NOT NULL DEFAULT 0,
+  `agent_name` VARCHAR(40) NULL,
   `admin_active_at` DATETIME NULL,
   `closed_by` VARCHAR(10) NULL,
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
