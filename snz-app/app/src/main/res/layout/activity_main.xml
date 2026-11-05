@@ -48,8 +48,7 @@
                 android:layout_height="48dp"
                 android:contentDescription="Menu"
                 android:padding="11dp"
-                android:src="@drawable/ic_menu"
-                android:tint="@color/brand" />
+                android:scaleType="fitCenter" />
         </LinearLayout>
 
         <!-- অবস্থা -->

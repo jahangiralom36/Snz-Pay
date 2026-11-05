@@ -63,6 +63,7 @@ public class MainActivity extends Activity {
         Ui.fitWindow(getWindow(), findViewById(R.id.mainRoot));
         Ui.lightBars(getWindow());
         Ui.box(findViewById(R.id.listCard), Ui.CARD, Ui.LINE, 18);
+        ((android.widget.ImageView) findViewById(R.id.btnMenu)).setImageDrawable(Icons.get("menu", Color.parseColor(Ui.BRAND)));
         findViewById(R.id.btnMenu).setOnClickListener(v -> openMenu());
 
         SyncJob.schedulePeriodic(this);
@@ -183,19 +184,19 @@ public class MainActivity extends Activity {
     }
 
     /** wallet অনুযায়ী আইকন */
-    static int walletIcon(String m) {
+    static String walletIcon(String m) {
         String u = m == null ? "" : m.toUpperCase(Locale.ROOT);
-        if (u.contains("BKASH")) return R.drawable.ic_send;
-        if (u.contains("NAGAD")) return R.drawable.ic_coins;
-        if (u.contains("ROCKET")) return R.drawable.ic_rocket;
-        if (u.contains("UPAY")) return R.drawable.ic_mobile;
-        if (u.contains("TAP")) return R.drawable.ic_tap;
-        if (u.contains("IPAY")) return R.drawable.ic_card;
-        if (u.contains("QR")) return R.drawable.ic_qr;
-        if (u.contains("BINANCE")) return R.drawable.ic_coins;
+        if (u.contains("BKASH")) return "send";
+        if (u.contains("NAGAD")) return "coins";
+        if (u.contains("ROCKET")) return "rocket";
+        if (u.contains("UPAY")) return "mobile";
+        if (u.contains("TAP")) return "tap";
+        if (u.contains("IPAY")) return "card";
+        if (u.contains("QR")) return "qr";
+        if (u.contains("BINANCE")) return "coins";
         if (u.contains("CELLFIN") || u.contains("BANK") || u.contains("DBBL") || u.contains("BRAC") || u.contains("CITY")
-                || u.contains("EBL") || u.contains("IFIC") || u.contains("SONALI") || u.contains("AGRANI") || u.contains("JAMUNA")) return R.drawable.ic_bank;
-        return R.drawable.ic_wallet;
+                || u.contains("EBL") || u.contains("IFIC") || u.contains("SONALI") || u.contains("AGRANI") || u.contains("JAMUNA")) return "bank";
+        return "wallet";
     }
 
     static String walletName(String m) {
@@ -287,11 +288,11 @@ public class MainActivity extends Activity {
                     + new SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(new Date(Session.expire(this)));
         }
         Ui.menu(this, "MENU",
-                new Ui.Item(R.drawable.ic_history, "All History", Db.get(this).totalCount() + " payment SMS saved on this phone", Ui.BRAND,
+                new Ui.Item("history", "All History", Db.get(this).totalCount() + " payment SMS saved on this phone", Ui.BRAND,
                         this::openHistory),
-                new Ui.Item(R.drawable.ic_calendar, "Account validity", validity, Ui.GREEN, null),
-                new Ui.Item(R.drawable.ic_mobile, "This phone", Session.deviceName(), Ui.MUTED, null),
-                new Ui.Item(R.drawable.ic_logout, "Logout", "You can log in again on this same phone", Ui.RED, this::askLogout));
+                new Ui.Item("calendar", "Account validity", validity, Ui.GREEN, null),
+                new Ui.Item("mobile", "This phone", Session.deviceName(), Ui.MUTED, null),
+                new Ui.Item("logout", "Logout", "You can log in again on this same phone", Ui.RED, this::askLogout));
     }
 
     // ---------------- All History (এই স্ক্রিনের ভেতরেই, আলাদা Activity নেই — তাই কখনো crash হবে না) ----------------
@@ -357,7 +358,7 @@ public class MainActivity extends Activity {
     }
 
     private void askLogout() {
-        Ui.confirm(this, R.drawable.ic_logout, "Logout?", "You can log in again later on this same phone with your key.",
+        Ui.confirm(this, "logout", "Logout?", "You can log in again later on this same phone with your key.",
                 "Logout", Ui.RED, () -> { Session.logout(this, ""); toLogin(); });
     }
 

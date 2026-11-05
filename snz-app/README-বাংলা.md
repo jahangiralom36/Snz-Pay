@@ -26,6 +26,7 @@
 | BootReceiver.java | ফোন চালু হলে |
 | LoginActivity.java / MainActivity.java | লগইন, মূল স্ক্রিন (☰ মেনু + All History একই স্ক্রিনে) |
 | CrashLog.java | হঠাৎ বন্ধ হলে কারণ সেভ করে, পরেরবার দেখায় (Copy) |
+| Icons.java + SvgPath.java | অ্যাপের সব আইকন এক ফাইলে (আলাদা drawable ফাইল লাগে না) |
 | Ui.java | স্টাইল, পপআপ, মেনু, স্ট্যাটাস বার ঠিক রাখা |
 
 ## 🖼️ নিজের লোগো দেওয়া (খুব সহজ)

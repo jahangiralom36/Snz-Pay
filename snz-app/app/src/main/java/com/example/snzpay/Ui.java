@@ -125,7 +125,7 @@ public final class Ui {
     }
 
     /** মাঝখানে সুন্দর নিশ্চিতকরণ পপআপ */
-    public static void confirm(Activity a, int iconRes, String title, String msg, String okText, String okColor, Runnable onOk) {
+    public static void confirm(Activity a, String iconRes, String title, String msg, String okText, String okColor, Runnable onOk) {
         LinearLayout c = card(a, false);
         c.setGravity(Gravity.CENTER_HORIZONTAL);
 
@@ -173,19 +173,17 @@ public final class Ui {
 
     /** নিচ থেকে ওঠা মেনু */
     public static final class Item {
-        final int icon;
-        final String title, sub, color;
+        final String icon, title, sub, color;
         final Runnable action;
-        public Item(int icon, String title, String sub, String color, Runnable action) {
+        public Item(String icon, String title, String sub, String color, Runnable action) {
             this.icon = icon; this.title = title; this.sub = sub; this.color = color; this.action = action;
         }
     }
 
     /** ভেক্টর আইকন — যেকোনো রঙে */
-    public static android.widget.ImageView icon(Context c, int res, String color) {
+    public static android.widget.ImageView icon(Context c, String name, String color) {
         android.widget.ImageView iv = new android.widget.ImageView(c);
-        if (res != 0) iv.setImageResource(res);
-        iv.setColorFilter(Color.parseColor(color));
+        iv.setImageDrawable(Icons.get(name, Color.parseColor(color)));
         iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
         return iv;
     }
