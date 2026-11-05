@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- হোম স্ক্রিন আইকন: লোগো পুরো আইকন জুড়ে (MyGP এর মত ভরাট) — Android নিজেই আকার দিয়ে কাটে -->
+<!--
+  হোম স্ক্রিন আইকন: গাঢ় নীল ব্যাকগ্রাউন্ডের উপর লোগো।
+  লোগো আরও ছোট/বড় করতে নিচের ৪টা "14dp" বদলান (বেশি = ছোট লোগো, কম = বড় লোগো; 0dp = পুরো জুড়ে)।
+-->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="rectangle">
             <solid android:color="#061535" />
         </shape>
     </item>
-    <item android:drawable="@drawable/app_logo" />
+    <item
+        android:bottom="14dp"
+        android:drawable="@drawable/app_logo"
+        android:left="14dp"
+        android:right="14dp"
+        android:top="14dp" />
 </layer-list>
