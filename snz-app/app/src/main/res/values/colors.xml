@@ -9,4 +9,20 @@
     <color name="red">#F87171</color>
     <color name="text">#FFFFFF</color>
     <color name="muted">#94A3B8</color>
+
+    <!-- IDE এর টেমপ্লেট ফাইল (values-night ইত্যাদি) যে রঙ খোঁজে — যেন error না আসে -->
+    <color name="primary">#00D9FF</color>
+    <color name="primary_dark">#061535</color>
+    <color name="primary_variant">#0B2559</color>
+    <color name="primaryVariant">#0B2559</color>
+    <color name="on_primary">#061535</color>
+    <color name="secondary">#00D89A</color>
+    <color name="secondary_variant">#00A97A</color>
+    <color name="on_secondary">#061535</color>
+    <color name="accent">#00D9FF</color>
+    <color name="background">#061535</color>
+    <color name="surface">#0B2559</color>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+    <color name="ic_launcher_background">#061535</color>
 </resources>

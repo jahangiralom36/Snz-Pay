@@ -27,6 +27,15 @@
 | LoginActivity.java / MainActivity.java | দুইটা স্ক্রিন |
 | Ui.java | গোল কোণার ব্যাকগ্রাউন্ড |
 
+## 🖼️ নিজের লোগো দেওয়া (খুব সহজ)
+1. `app/src/main/res/drawable/app_logo.xml` ফাইলটা ডিলিট করুন
+2. নিজের লোগো PNG **`app_logo.png`** নামে `res/drawable/` ফোল্ডারে রাখুন (512×512, 200KB এর কম)
+3. Build দিন — অ্যাপের ভেতরের লোগো আর ফোনের হোম স্ক্রিনের আইকন দুটোই বদলে যাবে।
+
+## IDE এর টেমপ্লেট ফাইল
+নতুন প্রজেক্টে IDE নিজে যে ফাইল দেয় (`values-night/themes.xml`, `drawable/ic_launcher_*.xml`, `mipmap/ic_launcher*.xml`)
+— এই zip এর ফাইল দিয়ে **replace** করুন। এগুলোর দরকারি রঙও `colors.xml` এ আছে, তাই রেখে দিলেও error আসবে না।
+
 ## Build
 - Namespace / Application ID: `com.example.snzpay` · Min SDK 26 · Target SDK 34 · Java 8
 - প্রতিবার নতুন APK এর আগে **Version Code ১ করে বাড়ান** (এখন 30)।

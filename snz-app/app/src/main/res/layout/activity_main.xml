@@ -20,7 +20,7 @@
             <ImageView
                 android:layout_width="46dp"
                 android:layout_height="46dp"
-                android:src="@mipmap/ic_launcher"
+                android:src="@drawable/app_logo"
                 android:contentDescription="@string/app_name" />
 
             <LinearLayout
