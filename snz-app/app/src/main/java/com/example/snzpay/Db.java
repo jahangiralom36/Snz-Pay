@@ -72,6 +72,19 @@ public final class Db extends SQLiteOpenHelper {
         return query(null, "time DESC", limit);
     }
 
+    public synchronized List<Row> today(int limit) {
+        return query("time>=" + todayStart(), "time DESC", limit);
+    }
+
+    /** status = -1 হলে সব */
+    public synchronized List<Row> history(int status, int limit) {
+        return query(status < 0 ? null : "status=" + status, "time DESC", limit);
+    }
+
+    public synchronized int totalCount() {
+        return count("1=1");
+    }
+
     public synchronized int pendingCount() {
         return count("status=" + PENDING);
     }

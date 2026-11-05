@@ -24,8 +24,8 @@
 | SmsReceiver.java | নতুন SMS এলে |
 | SyncJob.java | প্রতি ১৫ মিনিট / নেট আসলে |
 | BootReceiver.java | ফোন চালু হলে |
-| LoginActivity.java / MainActivity.java | দুইটা স্ক্রিন |
-| Ui.java | গোল কোণার ব্যাকগ্রাউন্ড |
+| LoginActivity.java / MainActivity.java / HistoryActivity.java | লগইন, মূল স্ক্রিন (☰ মেনু), সব History |
+| Ui.java | স্টাইল, পপআপ, মেনু, স্ট্যাটাস বার ঠিক রাখা |
 
 ## 🖼️ নিজের লোগো দেওয়া (খুব সহজ)
 1. `app/src/main/res/drawable/app_logo.xml` ফাইলটা ডিলিট করুন

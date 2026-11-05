@@ -2,7 +2,6 @@ package com.example.snzpay;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
@@ -20,7 +19,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
-/** মূল স্ক্রিন: অবস্থা, আজকের হিসাব, সাম্প্রতিক SMS, লগআউট */
+/** মূল স্ক্রিন: অবস্থা, আজকের হিসাব, আজকের SMS, ☰ মেনু (History / মেয়াদ / Logout) */
 public class MainActivity extends Activity {
 
     private TextView tvKeyInfo, tvStatus, tvStatusSub, tvToday, tvCount, tvEmpty;
@@ -60,14 +59,8 @@ public class MainActivity extends Activity {
         Ui.box(findViewById(R.id.boxToday), Ui.CARD, Ui.LINE, 16);
         Ui.box(findViewById(R.id.boxCount), Ui.CARD, Ui.LINE, 16);
         Ui.box(btnFix, Ui.BRAND, null, 12);
-        Button logout = findViewById(R.id.btnLogout);
-        Ui.box(logout, Ui.BG, Ui.RED, 14);
-        logout.setOnClickListener(v -> new AlertDialog.Builder(this)
-                .setTitle("Logout?")
-                .setMessage("You can log in again later on this same phone.")
-                .setPositiveButton("Logout", (d, w) -> { Session.logout(this, ""); toLogin(); })
-                .setNegativeButton("Cancel", null)
-                .show());
+        Ui.fitSystemBars(findViewById(R.id.mainRoot));
+        findViewById(R.id.btnMenu).setOnClickListener(v -> openMenu());
 
         SyncJob.schedulePeriodic(this);
     }
@@ -166,36 +159,63 @@ public class MainActivity extends Activity {
         tvToday.setText("Tk " + fmt(db.todayAmount()));
         tvCount.setText(String.valueOf(db.todayCount()));
 
-        // সাম্প্রতিক ৩০টা
-        List<Db.Row> rows = db.recent(30);
+        // আজকের SMS (সব দেখতে ☰ → All History)
+        List<Db.Row> rows = db.today(50);
         list.removeAllViews();
         tvEmpty.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
-        SimpleDateFormat f = new SimpleDateFormat("dd MMM, hh:mm a", Locale.US);
         for (Db.Row r : rows) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.VERTICAL);
-            int p = Ui.dp(this, 12);
-            row.setPadding(p, p, p, p);
-            Ui.box(row, Ui.CARD, Ui.LINE, 14);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
             lp.bottomMargin = Ui.dp(this, 8);
-
-            TextView t1 = new TextView(this);
-            t1.setText(r.method + "  •  Tk " + fmt(r.amount));
-            t1.setTextColor(Color.WHITE);
-            t1.setTextSize(15);
-            t1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-
-            TextView t2 = new TextView(this);
-            String st = r.status == Db.SENT ? "✓ Uploaded" : r.status == Db.REJECTED ? "✕ Not accepted" : "⏳ Waiting";
-            t2.setText(r.trx + "  •  " + f.format(new Date(r.time)) + "  •  " + st);
-            t2.setTextColor(Color.parseColor(r.status == Db.SENT ? Ui.GREEN : r.status == Db.REJECTED ? Ui.RED : Ui.AMBER));
-            t2.setTextSize(12);
-
-            row.addView(t1);
-            row.addView(t2);
-            list.addView(row, lp);
+            list.addView(smsRow(this, r), lp);
         }
+    }
+
+    /** একটা SMS এর কার্ড (History স্ক্রিনেও এটাই) */
+    static View smsRow(android.content.Context c, Db.Row r) {
+        LinearLayout row = new LinearLayout(c);
+        row.setOrientation(LinearLayout.VERTICAL);
+        int p = Ui.dp(c, 12);
+        row.setPadding(p, p, p, p);
+        Ui.box(row, Ui.CARD, Ui.LINE, 14);
+
+        TextView t1 = new TextView(c);
+        t1.setText(r.method + "  •  Tk " + fmt(r.amount));
+        t1.setTextColor(Color.WHITE);
+        t1.setTextSize(15);
+        t1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+
+        TextView t2 = new TextView(c);
+        String st = r.status == Db.SENT ? "✓ Uploaded" : r.status == Db.REJECTED ? "✕ Not accepted" : "⏳ Waiting";
+        t2.setText(r.trx + "  •  " + new SimpleDateFormat("dd MMM, hh:mm a", Locale.US).format(new Date(r.time)) + "  •  " + st);
+        t2.setTextColor(Color.parseColor(r.status == Db.SENT ? Ui.GREEN : r.status == Db.REJECTED ? Ui.RED : Ui.AMBER));
+        t2.setTextSize(12);
+
+        row.addView(t1);
+        row.addView(t2);
+        return row;
+    }
+
+    /** ☰ মেনু: All History, কী এর মেয়াদ, Logout */
+    private void openMenu() {
+        String validity;
+        if (Session.isMaster(this)) {
+            validity = "Master key • no expiry";
+        } else {
+            long left = Session.expire(this) - System.currentTimeMillis();
+            validity = (left / 86400000L) + " days " + ((left % 86400000L) / 3600000L) + " hours left • until "
+                    + new SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(new Date(Session.expire(this)));
+        }
+        Ui.menu(this, "MENU",
+                new Ui.Item("📜", "All History", Db.get(this).totalCount() + " payment SMS saved on this phone", Ui.BRAND,
+                        () -> startActivity(new Intent(this, HistoryActivity.class))),
+                new Ui.Item("🔑", "Account validity", validity, Ui.GREEN, null),
+                new Ui.Item("📱", "This phone", Session.deviceName(), Ui.MUTED, null),
+                new Ui.Item("🚪", "Logout", "You can log in again on this same phone", Ui.RED, this::askLogout));
+    }
+
+    private void askLogout() {
+        Ui.confirm(this, "🚪", "Logout?", "You can log in again later on this same phone with your key.",
+                "Logout", Ui.RED, () -> { Session.logout(this, ""); toLogin(); });
     }
 
     private void status(String title, String color, String sub) {
@@ -204,7 +224,7 @@ public class MainActivity extends Activity {
         tvStatusSub.setText(sub);
     }
 
-    private static String fmt(double v) {
+    static String fmt(double v) {
         return v == Math.floor(v) ? String.valueOf((long) v) : String.format(Locale.US, "%.2f", v);
     }
 
