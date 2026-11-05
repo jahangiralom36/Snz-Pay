@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="18dp">
+
+        <!-- হেডার -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:src="@mipmap/ic_launcher"
+                android:contentDescription="@string/app_name" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/app_name"
+                    android:textColor="@color/text"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvKeyInfo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/brand"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- অবস্থা -->
+        <LinearLayout
+            android:id="@+id/cardStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/green"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvStatusSub"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnFix"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="12dp"
+                android:text="ALLOW SMS"
+                android:textColor="@color/bg"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- আজকের হিসাব -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:id="@+id/boxToday"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="TODAY"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvToday"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Tk 0"
+                    android:textColor="@color/text"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/boxCount"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="SMS TODAY"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="0"
+                    android:textColor="@color/text"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- সাম্প্রতিক SMS -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="RECENT PAYMENT SMS"
+            android:textColor="@color/muted"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/list"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/tvEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:padding="24dp"
+            android:text="No payment SMS yet."
+            android:textColor="@color/muted"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btnLogout"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="20dp"
+            android:text="LOGOUT"
+            android:textColor="@color/red"
+            android:textStyle="bold" />
+    </LinearLayout>
+</ScrollView>

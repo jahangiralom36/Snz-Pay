@@ -1,0 +1,31 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.example.snzpay'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.example.snzpay"
+        minSdk 26
+        targetSdk 34
+        // নতুন APK বানানোর আগে প্রতিবার versionCode ১ করে বাড়াবেন
+        versionCode 30
+        versionName "3.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+// কোনো dependency নেই

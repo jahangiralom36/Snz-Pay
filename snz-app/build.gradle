@@ -1,0 +1,4 @@
+// SNZ App — কোনো বাইরের লাইব্রেরি নেই, শুধু Android নিজের জিনিস (হালকা ও ঝামেলামুক্ত)
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}
