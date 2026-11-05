@@ -32,11 +32,6 @@
             android:name=".MainActivity"
             android:exported="false" />
 
-        <!-- সব SMS এর তালিকা -->
-        <activity
-            android:name=".HistoryActivity"
-            android:exported="false" />
-
         <!-- নতুন SMS এলে (অ্যাপ বন্ধ থাকলেও Android নিজেই চালায়) -->
         <receiver
             android:name=".SmsReceiver"

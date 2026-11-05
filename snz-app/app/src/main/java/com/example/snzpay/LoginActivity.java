@@ -19,6 +19,7 @@ public class LoginActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        CrashLog.install(this);
         if (Session.loggedIn(this)) {
             openMain();
             return;

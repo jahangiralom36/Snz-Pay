@@ -24,7 +24,8 @@
 | SmsReceiver.java | নতুন SMS এলে |
 | SyncJob.java | প্রতি ১৫ মিনিট / নেট আসলে |
 | BootReceiver.java | ফোন চালু হলে |
-| LoginActivity.java / MainActivity.java / HistoryActivity.java | লগইন, মূল স্ক্রিন (☰ মেনু), সব History |
+| LoginActivity.java / MainActivity.java | লগইন, মূল স্ক্রিন (☰ মেনু + All History একই স্ক্রিনে) |
+| CrashLog.java | হঠাৎ বন্ধ হলে কারণ সেভ করে, পরেরবার দেখায় (Copy) |
 | Ui.java | স্টাইল, পপআপ, মেনু, স্ট্যাটাস বার ঠিক রাখা |
 
 ## 🖼️ নিজের লোগো দেওয়া (খুব সহজ)

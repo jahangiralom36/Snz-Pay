@@ -44,6 +44,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        CrashLog.install(this);
         if (!Session.loggedIn(this)) { toLogin(); return; }
         setContentView(R.layout.activity_main);
         tvKeyInfo = findViewById(R.id.tvKeyInfo);
@@ -63,6 +64,7 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnMenu).setOnClickListener(v -> openMenu());
 
         SyncJob.schedulePeriodic(this);
+        CrashLog.showIfAny(this);
     }
 
     @Override
@@ -201,10 +203,67 @@ public class MainActivity extends Activity {
         }
         Ui.menu(this, "MENU",
                 new Ui.Item("📜", "All History", Db.get(this).totalCount() + " payment SMS saved on this phone", Ui.BRAND,
-                        () -> startActivity(new Intent(this, HistoryActivity.class))),
+                        this::openHistory),
                 new Ui.Item("🔑", "Account validity", validity, Ui.GREEN, null),
                 new Ui.Item("📱", "This phone", Session.deviceName(), Ui.MUTED, null),
                 new Ui.Item("🚪", "Logout", "You can log in again on this same phone", Ui.RED, this::askLogout));
+    }
+
+    // ---------------- All History (এই স্ক্রিনের ভেতরেই, আলাদা Activity নেই — তাই কখনো crash হবে না) ----------------
+    private final java.util.List<Db.Row> histRows = new java.util.ArrayList<>();
+
+    private void openHistory() {
+        final android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_Material_NoActionBar);
+        d.setContentView(R.layout.activity_history);
+        android.view.Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.parseColor(Ui.BG)));
+            w.setStatusBarColor(Color.parseColor(Ui.BG));
+            w.setNavigationBarColor(Color.parseColor(Ui.BG));
+        }
+        d.findViewById(R.id.btnBack).setOnClickListener(v -> d.dismiss());
+        Ui.box(d.findViewById(R.id.tabs), Ui.INPUT, Ui.LINE, 14);
+        final TextView tabAll = d.findViewById(R.id.tabAll), tabSent = d.findViewById(R.id.tabSent), tabWait = d.findViewById(R.id.tabWait);
+        final TextView tvTotal = d.findViewById(R.id.tvTotal), tvNone = d.findViewById(R.id.tvNone);
+        final android.widget.BaseAdapter ad = new android.widget.BaseAdapter() {
+            @Override public int getCount() { return histRows.size(); }
+            @Override public Object getItem(int i) { return histRows.get(i); }
+            @Override public long getItemId(int i) { return i; }
+            @Override public View getView(int i, View old, android.view.ViewGroup parent) {
+                // প্রতিটা সারি একটা ফ্রেমে — ListView এর নিয়ম মেনে
+                android.widget.FrameLayout f = new android.widget.FrameLayout(MainActivity.this);
+                f.setPadding(0, 0, 0, Ui.dp(MainActivity.this, 8));
+                f.addView(smsRow(MainActivity.this, histRows.get(i)));
+                return f;
+            }
+        };
+        ((android.widget.ListView) d.findViewById(R.id.listAll)).setAdapter(ad);
+        final int[] cur = {-1};
+        final Runnable load = () -> {
+            histRows.clear();
+            histRows.addAll(Db.get(this).history(cur[0], 500));
+            ad.notifyDataSetChanged();
+            tvNone.setVisibility(histRows.isEmpty() ? View.VISIBLE : View.GONE);
+            tvTotal.setText(histRows.size() + " SMS");
+            tab(tabAll, cur[0] == -1);
+            tab(tabSent, cur[0] == Db.SENT);
+            tab(tabWait, cur[0] == Db.PENDING);
+        };
+        tabAll.setOnClickListener(v -> { cur[0] = -1; load.run(); });
+        tabSent.setOnClickListener(v -> { cur[0] = Db.SENT; load.run(); });
+        tabWait.setOnClickListener(v -> { cur[0] = Db.PENDING; load.run(); });
+        load.run();
+        d.show();
+    }
+
+    private static void tab(TextView t, boolean on) {
+        if (on) {
+            Ui.box(t, Ui.BRAND, null, 11);
+            t.setTextColor(Color.parseColor(Ui.BG));
+        } else {
+            t.setBackground(null);
+            t.setTextColor(Color.parseColor(Ui.MUTED));
+        }
     }
 
     private void askLogout() {
