@@ -19,8 +19,10 @@ import android.widget.TextView;
 public final class Ui {
     private Ui() {}
 
-    public static final String BG = "#061535", CARD = "#0B2559", LINE = "#1E4AA3", INPUT = "#051433",
-            BRAND = "#00D9FF", GREEN = "#00D89A", AMBER = "#FBBF24", RED = "#F87171", MUTED = "#94A3B8";
+    // পেমেন্ট অ্যাপের মত পরিষ্কার হালকা রঙ: সাদা কার্ড, গাঢ় নীল মূল রঙ, অবস্থা বোঝাতে সবুজ/কমলা/লাল
+    public static final String BG = "#F3F6FB", CARD = "#FFFFFF", LINE = "#E2E8F0", INPUT = "#F8FAFC",
+            BRAND = "#1D4ED8", ON_BRAND = "#FFFFFF", TEXT = "#0F172A",
+            GREEN = "#15803D", AMBER = "#B45309", RED = "#DC2626", MUTED = "#64748B";
 
     public static int dp(Context c, int v) {
         return Math.round(v * c.getResources().getDisplayMetrics().density);
@@ -47,6 +49,16 @@ public final class Ui {
         v.requestApplyInsets();
     }
 
+    /** হালকা ব্যাকগ্রাউন্ডে স্ট্যাটাস বার / নেভিগেশন বারের আইকন কালো */
+    @SuppressWarnings("deprecation")
+    public static void lightBars(Window w) {
+        if (w == null) return;
+        View d = w.getDecorView();
+        int f = d.getSystemUiVisibility() | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (android.os.Build.VERSION.SDK_INT >= 27) f |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        d.setSystemUiVisibility(f);
+    }
+
     // ---------------- পপআপ ----------------
 
     private static Dialog dialog(Activity a, View content, boolean bottom) {
@@ -59,7 +71,7 @@ public final class Ui {
             w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             w.setGravity(bottom ? Gravity.BOTTOM : Gravity.CENTER);
             w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            w.setDimAmount(0.6f);
+            w.setDimAmount(0.45f);
         }
         return d;
     }
@@ -111,7 +123,7 @@ public final class Ui {
         ic.setBackground(circle);
         c.addView(ic, icLp);
 
-        TextView t = text(a, title, 19, "#FFFFFF", true);
+        TextView t = text(a, title, 19, TEXT, true);
         t.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(-1, -2);
         tLp.topMargin = dp(a, 14);
@@ -130,8 +142,8 @@ public final class Ui {
         c.addView(row, rowLp);
 
         final Dialog d = dialog(a, wrap(a, c, false), false);
-        TextView cancel = button(a, "Cancel", INPUT, LINE, "#FFFFFF");
-        TextView ok = button(a, okText, okColor, null, BG);
+        TextView cancel = button(a, "Cancel", INPUT, LINE, TEXT);
+        TextView ok = button(a, okText, okColor, null, ON_BRAND);
         LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(0, -2, 1f);
         LinearLayout.LayoutParams br = new LinearLayout.LayoutParams(0, -2, 1f);
         br.leftMargin = dp(a, 10);

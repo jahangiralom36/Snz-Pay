@@ -176,7 +176,7 @@ public class MainActivity extends Activity {
 
         TextView t1 = new TextView(c);
         t1.setText(r.method + "  •  Tk " + fmt(r.amount));
-        t1.setTextColor(Color.WHITE);
+        t1.setTextColor(Color.parseColor(Ui.TEXT));
         t1.setTextSize(15);
         t1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
 
@@ -213,13 +213,15 @@ public class MainActivity extends Activity {
     private final java.util.List<Db.Row> histRows = new java.util.ArrayList<>();
 
     private void openHistory() {
-        final android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_Material_NoActionBar);
+        final android.app.Dialog d = new android.app.Dialog(this, android.R.style.Theme_Material_Light_NoActionBar);
         d.setContentView(R.layout.activity_history);
+        Ui.fitSystemBars(d.findViewById(R.id.historyRoot));   // ← বাটন যেন স্ট্যাটাস বারের নিচে থাকে
         android.view.Window w = d.getWindow();
         if (w != null) {
             w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.parseColor(Ui.BG)));
             w.setStatusBarColor(Color.parseColor(Ui.BG));
             w.setNavigationBarColor(Color.parseColor(Ui.BG));
+            Ui.lightBars(w);
         }
         d.findViewById(R.id.btnBack).setOnClickListener(v -> d.dismiss());
         Ui.box(d.findViewById(R.id.tabs), Ui.INPUT, Ui.LINE, 14);
@@ -259,7 +261,7 @@ public class MainActivity extends Activity {
     private static void tab(TextView t, boolean on) {
         if (on) {
             Ui.box(t, Ui.BRAND, null, 11);
-            t.setTextColor(Color.parseColor(Ui.BG));
+            t.setTextColor(Color.parseColor(Ui.ON_BRAND));
         } else {
             t.setBackground(null);
             t.setTextColor(Color.parseColor(Ui.MUTED));

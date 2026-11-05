@@ -11,8 +11,8 @@ android {
         minSdk 26
         targetSdk 34
         // নতুন APK বানানোর আগে প্রতিবার versionCode ১ করে বাড়াবেন
-        versionCode 33
-        versionName "3.3"
+        versionCode 34
+        versionName "3.4"
     }
 
     buildTypes {

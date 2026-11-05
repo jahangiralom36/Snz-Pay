@@ -1,27 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#061535</color>
-    <color name="card">#0B2559</color>
-    <color name="line">#1E4AA3</color>
-    <color name="brand">#00D9FF</color>
-    <color name="green">#00D89A</color>
-    <color name="amber">#FBBF24</color>
-    <color name="red">#F87171</color>
-    <color name="text">#FFFFFF</color>
-    <color name="muted">#94A3B8</color>
+    <color name="bg">#F3F6FB</color>
+    <color name="card">#FFFFFF</color>
+    <color name="line">#E2E8F0</color>
+    <color name="brand">#1D4ED8</color>
+    <color name="green">#15803D</color>
+    <color name="amber">#B45309</color>
+    <color name="red">#DC2626</color>
+    <color name="text">#0F172A</color>
+    <color name="on_brand">#FFFFFF</color>
+    <color name="muted">#64748B</color>
 
     <!-- IDE এর টেমপ্লেট ফাইল (values-night ইত্যাদি) যে রঙ খোঁজে — যেন error না আসে -->
-    <color name="primary">#00D9FF</color>
-    <color name="primary_dark">#061535</color>
-    <color name="primary_variant">#0B2559</color>
-    <color name="primaryVariant">#0B2559</color>
-    <color name="on_primary">#061535</color>
-    <color name="secondary">#00D89A</color>
-    <color name="secondary_variant">#00A97A</color>
-    <color name="on_secondary">#061535</color>
-    <color name="accent">#00D9FF</color>
-    <color name="background">#061535</color>
-    <color name="surface">#0B2559</color>
+    <color name="primary">#1D4ED8</color>
+    <color name="primary_dark">#1E3A8A</color>
+    <color name="primary_variant">#1E40AF</color>
+    <color name="primaryVariant">#1E40AF</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="secondary">#0EA5A4</color>
+    <color name="secondary_variant">#0F766E</color>
+    <color name="on_secondary">#FFFFFF</color>
+    <color name="accent">#1D4ED8</color>
+    <color name="background">#F3F6FB</color>
+    <color name="surface">#FFFFFF</color>
     <color name="black">#000000</color>
     <color name="white">#FFFFFF</color>
     <color name="ic_launcher_background">#061535</color>
