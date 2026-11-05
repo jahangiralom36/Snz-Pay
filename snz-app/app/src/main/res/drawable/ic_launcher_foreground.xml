@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- হোম স্ক্রিনের আইকন = app_logo (এই ফাইল বদলাতে হবে না) -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/app_logo"
-    android:inset="20%" />
+<!-- খালি (লোগো background এ পুরোটা জুড়ে আছে) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#00000000" />
+</shape>

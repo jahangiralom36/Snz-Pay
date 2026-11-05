@@ -125,20 +125,20 @@ public final class Ui {
     }
 
     /** মাঝখানে সুন্দর নিশ্চিতকরণ পপআপ */
-    public static void confirm(Activity a, String icon, String title, String msg, String okText, String okColor, Runnable onOk) {
+    public static void confirm(Activity a, int iconRes, String title, String msg, String okText, String okColor, Runnable onOk) {
         LinearLayout c = card(a, false);
         c.setGravity(Gravity.CENTER_HORIZONTAL);
 
-        TextView ic = text(a, icon, 30, okColor, false);
-        ic.setGravity(Gravity.CENTER);
         int s = dp(a, 64);
-        LinearLayout.LayoutParams icLp = new LinearLayout.LayoutParams(s, s);
+        android.widget.ImageView ic = icon(a, iconRes, okColor);
+        int pad = dp(a, 17);
+        ic.setPadding(pad, pad, pad, pad);
         GradientDrawable circle = new GradientDrawable();
         circle.setShape(GradientDrawable.OVAL);
         circle.setColor(Color.parseColor(INPUT));
         circle.setStroke(dp(a, 2), Color.parseColor(okColor));
         ic.setBackground(circle);
-        c.addView(ic, icLp);
+        c.addView(ic, new LinearLayout.LayoutParams(s, s));
 
         TextView t = text(a, title, 19, TEXT, true);
         t.setGravity(Gravity.CENTER);
@@ -173,11 +173,21 @@ public final class Ui {
 
     /** নিচ থেকে ওঠা মেনু */
     public static final class Item {
-        final String icon, title, sub, color;
+        final int icon;
+        final String title, sub, color;
         final Runnable action;
-        public Item(String icon, String title, String sub, String color, Runnable action) {
+        public Item(int icon, String title, String sub, String color, Runnable action) {
             this.icon = icon; this.title = title; this.sub = sub; this.color = color; this.action = action;
         }
+    }
+
+    /** ভেক্টর আইকন — যেকোনো রঙে */
+    public static android.widget.ImageView icon(Context c, int res, String color) {
+        android.widget.ImageView iv = new android.widget.ImageView(c);
+        if (res != 0) iv.setImageResource(res);
+        iv.setColorFilter(Color.parseColor(color));
+        iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        return iv;
     }
 
     public static void menu(Activity a, String heading, Item... items) {
@@ -201,9 +211,16 @@ public final class Ui {
             LinearLayout.LayoutParams rLp = new LinearLayout.LayoutParams(-1, -2);
             rLp.topMargin = dp(a, 10);
 
-            TextView ic = text(a, it.icon, 20, it.color, false);
-            ic.setGravity(Gravity.CENTER);
-            row.addView(ic, new LinearLayout.LayoutParams(dp(a, 36), dp(a, 36)));
+            // রঙিন হালকা বৃত্তের ভেতর আইকন
+            android.widget.ImageView ic = icon(a, it.icon, it.color);
+            int ip = dp(a, 9);
+            ic.setPadding(ip, ip, ip, ip);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.OVAL);
+            bg.setColor(Color.parseColor(it.color));
+            bg.setAlpha(30);
+            ic.setBackground(bg);
+            row.addView(ic, new LinearLayout.LayoutParams(dp(a, 40), dp(a, 40)));
 
             LinearLayout col = new LinearLayout(a);
             col.setOrientation(LinearLayout.VERTICAL);
@@ -214,7 +231,7 @@ public final class Ui {
             row.addView(col, cLp);
 
             if (it.action != null) {
-                row.addView(text(a, "›", 22, MUTED, false));
+                row.addView(text(a, "›", 24, MUTED, false));
                 row.setOnClickListener(v -> { d.dismiss(); it.action.run(); });
             }
             c.addView(row, rLp);

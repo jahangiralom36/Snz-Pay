@@ -42,15 +42,14 @@
                     android:textSize="12sp" />
             </LinearLayout>
 
-            <TextView
+            <ImageView
                 android:id="@+id/btnMenu"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:gravity="center"
-                android:text="☰"
-                android:textColor="@color/brand"
-                android:textSize="22sp"
-                android:textStyle="bold" />
+                android:contentDescription="Menu"
+                android:padding="11dp"
+                android:src="@drawable/ic_menu"
+                android:tint="@color/brand" />
         </LinearLayout>
 
         <!-- অবস্থা -->

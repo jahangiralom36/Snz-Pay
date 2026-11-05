@@ -44,7 +44,7 @@ public final class CrashLog {
         } catch (Throwable e) {
             return;
         }
-        Ui.confirm(a, "⚠️", "The app closed unexpectedly",
+        Ui.confirm(a, R.drawable.ic_shield, "The app closed unexpectedly",
                 "Tap COPY and send it to the developer so it can be fixed.\n\n" + (s.length() > 300 ? s.substring(0, 300) + "…" : s),
                 "Copy", Ui.AMBER, () -> {
                     try {

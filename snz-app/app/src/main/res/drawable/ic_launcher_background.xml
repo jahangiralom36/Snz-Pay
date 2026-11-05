@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="#061535" />
-</shape>
+<!-- হোম স্ক্রিন আইকন: লোগো পুরো আইকন জুড়ে (MyGP এর মত ভরাট) — Android নিজেই আকার দিয়ে কাটে -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#061535" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/app_logo" />
+</layer-list>
