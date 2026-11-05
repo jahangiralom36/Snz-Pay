@@ -207,3 +207,37 @@ CREATE TABLE IF NOT EXISTS `error_logs` (
   UNIQUE KEY `uq_err_hash` (`err_hash`),
   KEY `idx_err_src` (`source`, `last_seen`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- -------------------------------------------------------------------------
+-- 10) Live Chat — dashboard এর চ্যাট বাটন ↔ Admin → Messenger (AI / Admin উত্তর)
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `chat_threads` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `status` VARCHAR(10) NOT NULL DEFAULT 'open',
+  `last_sender` VARCHAR(10) NULL,
+  `last_reply_by` VARCHAR(10) NULL,
+  `last_preview` VARCHAR(160) NULL,
+  `admin_unread` INT NOT NULL DEFAULT 0,
+  `user_unread` INT NOT NULL DEFAULT 0,
+  `needs_admin` TINYINT(1) NOT NULL DEFAULT 0,
+  `ai_off` TINYINT(1) NOT NULL DEFAULT 0,
+  `admin_active_at` DATETIME NULL,
+  `closed_by` VARCHAR(10) NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NULL,
+  `closed_at` DATETIME NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_ct_user` (`user_id`, `status`),
+  KEY `idx_ct_upd` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `chat_messages` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `thread_id` INT NOT NULL,
+  `sender` VARCHAR(10) NOT NULL,
+  `body` TEXT NOT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_cm_thread` (`thread_id`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
