@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   হোম স্ক্রিন আইকন: গাঢ় নীল ব্যাকগ্রাউন্ডের উপর লোগো।
-  লোগো আরও ছোট/বড় করতে নিচের ৪টা "14dp" বদলান (বেশি = ছোট লোগো, কম = বড় লোগো; 0dp = পুরো জুড়ে)।
+  লোগো আরও ছোট/বড় করতে নিচের ৪টা "22dp" বদলান (বেশি = ছোট লোগো, কম = বড় লোগো; 0dp = পুরো জুড়ে)।
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
@@ -10,9 +10,9 @@
         </shape>
     </item>
     <item
-        android:bottom="14dp"
+        android:bottom="22dp"
         android:drawable="@drawable/app_logo"
-        android:left="14dp"
-        android:right="14dp"
-        android:top="14dp" />
+        android:left="22dp"
+        android:right="22dp"
+        android:top="22dp" />
 </layer-list>
