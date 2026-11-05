@@ -30,7 +30,7 @@ public final class Db extends SQLiteOpenHelper {
     }
 
     private Db(Context c) {
-        super(c, "snz_app.db", null, 1);
+        super(c, "snz_app.db", null, 2);
     }
 
     @Override
@@ -39,10 +39,47 @@ public final class Db extends SQLiteOpenHelper {
                 + "sender TEXT, body TEXT, time INTEGER, status INTEGER DEFAULT 0, note TEXT)");
         db.execSQL("CREATE INDEX idx_sms_status ON sms(status)");
         db.execSQL("CREATE INDEX idx_sms_time ON sms(time)");
+        createKv(db);
     }
 
     @Override
-    public void onUpgrade(SQLiteDatabase db, int o, int n) {}
+    public void onUpgrade(SQLiteDatabase db, int o, int n) {
+        if (o < 2) createKv(db);
+    }
+
+    /** অ্যাপের সব সেটিং (লগইন কী, মেয়াদ, wallet ইত্যাদি) — key / value টেবিল */
+    private static void createKv(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)");
+    }
+
+    public synchronized String getStr(String k, String def) {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT v FROM kv WHERE k=?", new String[]{k})) {
+            return c.moveToFirst() && !c.isNull(0) ? c.getString(0) : def;
+        }
+    }
+
+    public synchronized void putStr(String k, String v) {
+        if (v == null) { remove(k); return; }
+        ContentValues cv = new ContentValues();
+        cv.put("k", k);
+        cv.put("v", v);
+        getWritableDatabase().insertWithOnConflict("kv", null, cv, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    public synchronized long getLong(String k, long def) {
+        try { return Long.parseLong(getStr(k, String.valueOf(def))); } catch (Exception e) { return def; }
+    }
+
+    public synchronized void putLong(String k, long v) { putStr(k, String.valueOf(v)); }
+
+    public synchronized void remove(String k) {
+        getWritableDatabase().delete("kv", "k=?", new String[]{k});
+    }
+
+    /** লগআউট — শুধু লগইনের তথ্য মোছে; SMS History থেকে যায় */
+    public synchronized void clearSession() {
+        getWritableDatabase().delete("kv", "k LIKE 'sess.%'", null);
+    }
 
     /** নতুন হলে true (একই TrxID দুইবার সেভ হয় না) */
     public synchronized boolean insert(String method, String trx, double amount, String sender, String body, long time) {

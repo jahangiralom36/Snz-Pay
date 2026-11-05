@@ -2,7 +2,6 @@ package com.example.snzpay;
 
 import android.Manifest;
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.ConnectivityManager;
@@ -115,9 +114,9 @@ public final class Sync {
         long nowR = android.os.SystemClock.elapsedRealtime();
         if (nowR - lastScan < 60 * 1000L) return;
         lastScan = nowR;
-        SharedPreferences p = c.getSharedPreferences("snz_scan", Context.MODE_PRIVATE);
+        Db db = Db.get(c);
         long now = System.currentTimeMillis();
-        long since = Math.max(p.getLong("last", now - 2L * 86400000), now - 2L * 86400000);
+        long since = Math.max(db.getLong("scan_last", now - 2L * 86400000), now - 2L * 86400000);
         long max = since;
         try (Cursor cur = c.getContentResolver().query(Uri.parse("content://sms/inbox"),
                 new String[]{"address", "body", "date"}, "date > ?", new String[]{String.valueOf(since)}, "date ASC")) {
@@ -131,6 +130,6 @@ public final class Sync {
         } catch (Exception e) {
             return;
         }
-        p.edit().putLong("last", max).apply();
+        db.putLong("scan_last", max);
     }
 }

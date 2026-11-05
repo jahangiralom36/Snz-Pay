@@ -19,7 +19,7 @@
 | Session.java | লগইন তথ্য, মেয়াদ, কোন wallet ON |
 | KeyCheck.java | কী যাচাই / লগআউট |
 | SmsParser.java | SMS থেকে TrxID, টাকা, নম্বর |
-| Db.java | ফোনের ভেতরের ছোট ডাটাবেজ |
+| Db.java | SQLite ডাটাবেজ `snz_app.db` — SMS History (`sms` টেবিল) + অ্যাপের সব সেটিং/লগইন (`kv` টেবিল) |
 | Sync.java | SMS সেভ + সার্ভারে পাঠানো + মিস হওয়া SMS খোঁজা |
 | SmsReceiver.java | নতুন SMS এলে |
 | SyncJob.java | প্রতি ১৫ মিনিট / নেট আসলে |

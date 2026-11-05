@@ -122,14 +122,8 @@ public class MainActivity extends Activity {
         if (!Session.loggedIn(this)) { toLogin(); return; }
         Db db = Db.get(this);
 
-        // কী এর মেয়াদ
-        if (Session.isMaster(this)) {
-            tvKeyInfo.setText("Master key • all wallets");
-        } else {
-            long left = Session.expire(this) - System.currentTimeMillis();
-            long days = left / 86400000L, hours = (left % 86400000L) / 3600000L;
-            tvKeyInfo.setText("Key valid: " + days + "d " + hours + "h left • " + Session.deviceName());
-        }
+        // নামের নিচে ট্যাগলাইন (মেয়াদ / ফোন ☰ মেনুতে)
+        tvKeyInfo.setText("Faster • Safer • Smarter");
 
         // অবস্থা (সবচেয়ে জরুরিটা আগে)
         int pending = db.pendingCount();

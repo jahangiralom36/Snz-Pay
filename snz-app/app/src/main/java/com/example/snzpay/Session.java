@@ -9,16 +9,38 @@ import org.json.JSONArray;
 
 import java.util.Locale;
 
-/** লগইন তথ্য: কী, মেয়াদ, কোন wallet এর SMS পড়া যাবে */
+/** লগইন তথ্য: কী, মেয়াদ, কোন wallet এর SMS পড়া যাবে — সব SQLite এ সেভ */
 public final class Session {
     private Session() {}
 
-    private static SharedPreferences p(Context c) {
-        return c.getSharedPreferences("snz_session", Context.MODE_PRIVATE);
+    // সব তথ্য SQLite এ (Db এর kv টেবিল) — "sess." দিয়ে শুরু নামগুলো লগআউটে মুছে যায়
+    private static Db db(Context c) {
+        Db d = Db.get(c);
+        migrateOnce(c, d);
+        return d;
     }
 
-    public static String key(Context c) { return p(c).getString("key", ""); }
-    public static long expire(Context c) { return p(c).getLong("expire", 0); }
+    private static volatile boolean migrated = false;
+
+    /** আগের ভার্সনের (SharedPreferences) লগইন থাকলে একবার SQLite এ নিয়ে আসা */
+    private static void migrateOnce(Context c, Db d) {
+        if (migrated) return;
+        migrated = true;
+        try {
+            SharedPreferences old = c.getSharedPreferences("snz_session", Context.MODE_PRIVATE);
+            String k = old.getString("key", "");
+            if (!k.isEmpty() && d.getStr("sess.key", "").isEmpty()) {
+                d.putStr("sess.key", k);
+                d.putLong("sess.expire", old.getLong("expire", 0));
+                String m = old.getString("methods", null);
+                if (m != null) d.putStr("sess.methods", m);
+            }
+            old.edit().clear().apply();
+        } catch (Exception ignored) {}
+    }
+
+    public static String key(Context c) { return db(c).getStr("sess.key", ""); }
+    public static long expire(Context c) { return db(c).getLong("sess.expire", 0); }
 
     public static boolean isMaster(Context c) {
         return Config.MASTER_KEY.equalsIgnoreCase(key(c));
@@ -26,43 +48,51 @@ public final class Session {
 
     /** লগইন আছে এবং (মাস্টার কী বা) মেয়াদ শেষ হয়নি */
     public static boolean loggedIn(Context c) {
-        if (key(c).isEmpty()) return false;
-        return isMaster(c) || System.currentTimeMillis() < expire(c);
+        String k = key(c);
+        if (k.isEmpty()) return false;
+        return Config.MASTER_KEY.equalsIgnoreCase(k) || System.currentTimeMillis() < expire(c);
     }
 
     public static void save(Context c, String key, long expire, JSONArray methods) {
-        SharedPreferences.Editor e = p(c).edit().putString("key", key).putLong("expire", expire).putInt("streak", 0);
-        if (methods != null) e.putString("methods", methods.toString());
-        e.remove("reason").apply();
+        Db d = db(c);
+        d.clearSession();
+        d.putStr("sess.key", key);
+        d.putLong("sess.expire", expire);
+        if (methods != null) d.putStr("sess.methods", methods.toString());
+        d.remove("reason");
     }
 
     public static void updateFromServer(Context c, long expire, JSONArray methods) {
-        SharedPreferences.Editor e = p(c).edit().putInt("streak", 0);
-        if (expire > 0) e.putLong("expire", expire);
-        if (methods != null) e.putString("methods", methods.toString());
-        e.apply();
+        Db d = db(c);
+        d.putLong("sess.streak", 0);
+        if (expire > 0) d.putLong("sess.expire", expire);
+        if (methods != null) d.putStr("sess.methods", methods.toString());
     }
 
     public static void logout(Context c, String reason) {
-        p(c).edit().clear().putString("reason", reason == null ? "" : reason).apply();
+        Db d = db(c);
+        d.clearSession();
+        d.putStr("reason", reason == null ? "" : reason);
         SyncJob.cancelAll(c);
     }
 
     /** কেন লগআউট হয়েছিল (একবার দেখিয়ে মুছে যায়) */
     public static String takeReason(Context c) {
-        String r = p(c).getString("reason", "");
-        p(c).edit().remove("reason").apply();
+        Db d = db(c);
+        String r = d.getStr("reason", "");
+        d.remove("reason");
         return r;
     }
 
     public static int bumpStreak(Context c) {
-        int s = p(c).getInt("streak", 0) + 1;
-        p(c).edit().putInt("streak", s).apply();
-        return s;
+        Db d = db(c);
+        long s = d.getLong("sess.streak", 0) + 1;
+        d.putLong("sess.streak", s);
+        return (int) s;
     }
 
-    public static long lastCheck(Context c) { return p(c).getLong("last_check", 0); }
-    public static void setLastCheck(Context c) { p(c).edit().putLong("last_check", System.currentTimeMillis()).apply(); }
+    public static long lastCheck(Context c) { return db(c).getLong("sess.last_check", 0); }
+    public static void setLastCheck(Context c) { db(c).putLong("sess.last_check", System.currentTimeMillis()); }
 
     public static String deviceId(Context c) {
         String id = Settings.Secure.getString(c.getContentResolver(), Settings.Secure.ANDROID_ID);
@@ -80,7 +110,7 @@ public final class Session {
 
     private static JSONArray methods(Context c) {
         if (isMaster(c)) return null;               // মাস্টার কী → সব
-        String raw = p(c).getString("methods", null);
+        String raw = db(c).getStr("sess.methods", null);
         if (raw == null) return null;               // পুরনো সার্ভার → কোনো বাধা নেই
         try { return new JSONArray(raw); } catch (Exception e) { return null; }
     }
@@ -113,6 +143,6 @@ public final class Session {
     }
 
     // ---------------- শেষ অবস্থা (স্ক্রিনে দেখানোর জন্য) ----------------
-    public static void setNote(Context c, String note) { p(c).edit().putString("note", note == null ? "" : note).apply(); }
-    public static String note(Context c) { return p(c).getString("note", ""); }
+    public static void setNote(Context c, String note) { db(c).putStr("sess.note", note == null ? "" : note); }
+    public static String note(Context c) { return db(c).getStr("sess.note", ""); }
 }
