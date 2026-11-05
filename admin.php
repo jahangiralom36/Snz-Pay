@@ -1005,15 +1005,11 @@ if ($chatOn) {
         $newChat = [
             'enabled'    => !empty($_POST['chat_enabled']) ? 1 : 0,
             'ai_enabled' => !empty($_POST['chat_ai_enabled']) ? 1 : 0,
-            'model'      => array_key_exists($_POST['chat_model'] ?? '', snz_chat_models()) ? $_POST['chat_model'] : 'claude-opus-5-5',
             'agent_names' => mb_substr(trim((string) ($_POST['chat_agent_names'] ?? '')), 0, 300) ?: 'Mahid, Nahid, Magid, Sihan, Raihan, Sayed',
             'admin_name' => mb_substr(trim((string) ($_POST['chat_admin_name'] ?? '')), 0, 30) ?: 'Mahid',
-            'extra_info' => mb_substr(trim((string) ($_POST['chat_extra_info'] ?? '')), 0, 4000),
+            'custom_qa'  => mb_substr(trim((string) ($_POST['chat_custom_qa'] ?? '')), 0, 8000),
             'admin_pause_min' => max(0, min(240, (int) ($_POST['chat_pause'] ?? 15))),
         ];
-        $k = trim((string) ($_POST['chat_api_key'] ?? ''));
-        if ($k !== '') $newChat['api_key'] = $k;                 // খালি রাখলে আগেরটাই থাকবে
-        if (!empty($_POST['chat_api_key_remove'])) $newChat['api_key'] = '';
         if (snz_chat_save_settings($newChat)) $msg = "Messenger settings saved.";
         else $error = "Could not save chat_settings.json (check folder write permission).";
     }
@@ -1871,27 +1867,16 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
                 <input type="hidden" name="csrf" value="<?= $CSRF ?>">
                 <input type="hidden" name="action_chat_settings" value="1">
                 <div class="flex items-center gap-3 pb-3 border-b border-[#0d265c]">
-                    <div class="w-10 h-10 rounded-2xl bg-[#00D9FF]/15 text-[#00D9FF] flex items-center justify-center text-lg"><i class="fa-solid fa-robot"></i></div>
-                    <div><h2 class="text-base font-bold text-white">Live Chat & AI Settings</h2><p class="text-xs text-slate-300">AI replies use the Claude API. Get a key from console.anthropic.com → API Keys.</p></div>
+                    <div class="w-10 h-10 rounded-2xl bg-[#00D9FF]/15 text-[#00D9FF] flex items-center justify-center text-lg"><i class="fa-solid fa-brain"></i></div>
+                    <div><h2 class="text-base font-bold text-white">Live Chat Settings</h2><p class="text-xs text-slate-300">Auto reply works by itself (no API, free). It knows the whole website, the user's balance, plans, deposits and can check a TrxID. Anything it can't answer comes to you as "Needs Admin".</p></div>
                 </div>
                 <div class="grid sm:grid-cols-2 gap-3">
                     <label class="flex items-center gap-3 bg-[#051433] border border-[#0d2a63] rounded-2xl px-4 py-3 text-xs font-bold text-white cursor-pointer"><input type="checkbox" name="chat_enabled" value="1" <?= !empty($chatSet['enabled']) ? 'checked' : '' ?> class="w-4 h-4"> Show Live Chat button on dashboard</label>
-                    <label class="flex items-center gap-3 bg-[#051433] border border-[#0d2a63] rounded-2xl px-4 py-3 text-xs font-bold text-white cursor-pointer"><input type="checkbox" name="chat_ai_enabled" value="1" <?= !empty($chatSet['ai_enabled']) ? 'checked' : '' ?> class="w-4 h-4"> AI answers automatically</label>
+                    <label class="flex items-center gap-3 bg-[#051433] border border-[#0d2a63] rounded-2xl px-4 py-3 text-xs font-bold text-white cursor-pointer"><input type="checkbox" name="chat_ai_enabled" value="1" <?= !empty($chatSet['ai_enabled']) ? 'checked' : '' ?> class="w-4 h-4"> Auto reply (AI) ON</label>
                 </div>
                 <div class="grid sm:grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-[11px] font-bold text-slate-300 mb-1">Claude API key <?= $chatSet['api_key'] !== '' ? '<span class="text-[#00D89A]">✓ saved (…' . htmlspecialchars(substr($chatSet['api_key'], -4)) . ')</span>' : '<span class="text-amber-400">not set</span>' ?></label>
-                        <input type="password" name="chat_api_key" autocomplete="new-password" placeholder="<?= $chatSet['api_key'] !== '' ? 'Leave empty to keep the saved key' : 'sk-ant-...' ?>" class="w-full bg-[#020817] border border-[#0d2a63] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#00D9FF]">
-                        <?php if ($chatSet['api_key'] !== ''): ?><label class="mt-1.5 flex items-center gap-2 text-[10px] text-rose-300"><input type="checkbox" name="chat_api_key_remove" value="1"> Remove saved key</label><?php endif; ?>
-                    </div>
-                    <div>
-                        <label class="block text-[11px] font-bold text-slate-300 mb-1">AI model</label>
-                        <select name="chat_model" class="w-full bg-[#020817] border border-[#0d2a63] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#00D9FF]">
-                            <?php foreach (snz_chat_models() as $mid => $mlabel): ?><option value="<?= $mid ?>" <?= $chatSet['model'] === $mid ? 'selected' : '' ?>><?= htmlspecialchars($mlabel) ?></option><?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-[11px] font-bold text-slate-300 mb-1">Support names (AI uses one per chat, comma separated)</label>
+                        <label class="block text-[11px] font-bold text-slate-300 mb-1">Support names (one per chat, comma separated)</label>
                         <input type="text" name="chat_agent_names" maxlength="300" value="<?= htmlspecialchars($chatSet['agent_names']) ?>" placeholder="Mahid, Nahid, Magid, Sihan, Raihan, Sayed" class="w-full bg-[#020817] border border-[#0d2a63] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#00D9FF]">
                     </div>
                     <div>
@@ -1899,29 +1884,16 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
                         <input type="text" name="chat_admin_name" maxlength="30" value="<?= htmlspecialchars($chatSet['admin_name']) ?>" placeholder="Mahid" class="w-full bg-[#020817] border border-[#0d2a63] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#00D9FF]">
                     </div>
                     <div>
-                        <label class="block text-[11px] font-bold text-slate-300 mb-1">After admin replies, AI stays silent for (minutes)</label>
+                        <label class="block text-[11px] font-bold text-slate-300 mb-1">After you reply, auto reply stays silent for (minutes)</label>
                         <input type="number" name="chat_pause" min="0" max="240" value="<?= (int) $chatSet['admin_pause_min'] ?>" class="w-full bg-[#020817] border border-[#0d2a63] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#00D9FF]">
                     </div>
                 </div>
                 <div>
-                    <label class="block text-[11px] font-bold text-slate-300 mb-1">Extra info for AI (office time, rules, offers…) — AI uses this to answer</label>
-                    <textarea name="chat_extra_info" rows="4" maxlength="4000" placeholder="e.g. Support time 9am–11pm. Refunds are not possible after a plan is activated." class="w-full bg-[#020817] border border-[#0d2a63] rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#00D9FF]"><?= htmlspecialchars($chatSet['extra_info']) ?></textarea>
+                    <label class="block text-[11px] font-bold text-slate-300 mb-1">Teach new answers — one per line: <span class="text-[#00D9FF] font-mono">words, words =&gt; answer</span></label>
+                    <textarea name="chat_custom_qa" rows="6" maxlength="8000" placeholder="office time, kokhon khola, অফিস টাইম => আমাদের সাপোর্ট প্রতিদিন সকাল ৯টা থেকে রাত ১১টা পর্যন্ত খোলা থাকে স্যার 😊&#10;whatsapp, হোয়াটসঅ্যাপ => আমাদের WhatsApp নম্বর 01XXXXXXXXX&#10;refund policy => প্ল্যান চালু হওয়ার পর রিফান্ড হয় না স্যার।" class="w-full bg-[#020817] border border-[#0d2a63] rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-[#00D9FF]"><?= htmlspecialchars($chatSet['custom_qa']) ?></textarea>
+                    <p class="text-[10px] text-slate-400 mt-1">If a user's message contains any of the words before <b>=&gt;</b>, this answer is sent first. Use \n for a new line.</p>
                 </div>
-                <div class="text-[11px] rounded-xl px-3 py-2.5 border <?= !empty($chatSet['last_error']) && strtotime($chatSet['last_error_at'] ?? '2000-01-01') > strtotime($chatSet['last_ok_at'] ?? '2000-01-01') ? 'border-rose-500/40 bg-rose-500/10 text-rose-200' : 'border-[#0d2a63] bg-[#051433] text-slate-300' ?>">
-                    <b>AI status:</b>
-                    <?php if (!empty($chatSet['last_error']) && strtotime($chatSet['last_error_at'] ?? '2000-01-01') > strtotime($chatSet['last_ok_at'] ?? '2000-01-01')): ?>
-                        ❌ Last error (<?= htmlspecialchars($chatSet['last_error_at']) ?>): <?= htmlspecialchars($chatSet['last_error']) ?>
-                    <?php elseif (!empty($chatSet['last_ok_at'])): ?>
-                        ✅ Working — last AI reply <?= htmlspecialchars($chatSet['last_ok_at']) ?>
-                    <?php else: ?>
-                        Not used yet. Without an API key the chat still answers common questions (deposit, plans, app, links) by itself and sends the rest to you.
-                    <?php endif; ?>
-                    <div id="msgTestOut" class="mt-1.5 font-bold"></div>
-                </div>
-                <div class="flex flex-wrap gap-2">
-                    <button type="submit" class="snz-gradient text-[#061535] font-black px-6 py-3 rounded-xl text-xs"><i class="fa-solid fa-floppy-disk"></i> Save settings</button>
-                    <button type="button" onclick="msgTestAi(this)" class="bg-[#092257] border border-[#174396] text-white font-bold px-5 py-3 rounded-xl text-xs"><i class="fa-solid fa-vial"></i> Test AI (save first)</button>
-                </div>
+                <button type="submit" class="snz-gradient text-[#061535] font-black px-6 py-3 rounded-xl text-xs"><i class="fa-solid fa-floppy-disk"></i> Save settings</button>
             </form>
         </section>
         <script>
@@ -2020,17 +1992,6 @@ $apkTime = $apkExists ? date("d M Y, h:i A", filemtime(__DIR__ . '/app-release.a
                 setTimeout(() => $('msgInput').focus(), 100);
             };
             window.msgBack = () => { $('msgWrap').classList.remove('chat'); };
-            window.msgTestAi = async function (btn) {
-                const out = $('msgTestOut');
-                btn.disabled = true; out.textContent = 'Testing… (up to 60 seconds)'; out.style.color = '#cbd5e1';
-                const f = new FormData(); f.append('a', 'test'); f.append('csrf', CSRF);
-                try {
-                    const r = await fetch(API, { method: 'POST', body: f, credentials: 'same-origin' });
-                    const d = await r.json();
-                    out.textContent = d.message || d.status; out.style.color = d.status === 'success' ? '#00D89A' : '#FB7185';
-                } catch (e) { out.textContent = 'Network error'; out.style.color = '#FB7185'; }
-                btn.disabled = false;
-            };
 
             window.msgReply = async function (e) {
                 if (e) e.preventDefault();

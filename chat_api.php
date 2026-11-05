@@ -152,13 +152,6 @@ if ($a === 'list') {
     chatOut(['status' => 'success', 'threads' => $rows, 'unseen_total' => (int) $tot]);
 }
 
-if ($a === 'test') {
-    // ⚙️ Settings → "Test AI": আসল কী দিয়ে একবার চেষ্টা, ভুল থাকলে ঠিক কারণটা দেখাবে
-    $r = snz_chat_call_ai($set, 'You are a test. Reply with: OK', [['role' => 'user', 'content' => 'Say OK']]);
-    snz_chat_note_status($r['ok'], $r['error']);
-    chatOut($r['ok'] ? ['status' => 'success', 'message' => 'AI is working ✅ Reply: ' . mb_substr($r['text'], 0, 80)] : ['status' => 'error', 'message' => $r['error']]);
-}
-
 if ($a === 'unseen') {
     chatOut(['status' => 'success', 'unseen_total' => (int) $pdo->query("SELECT COUNT(*) FROM chat_threads WHERE admin_unread > 0")->fetchColumn()]);
 }

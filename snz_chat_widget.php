@@ -100,7 +100,17 @@ $snzCU = [
 #snzChatToast .tt{font-size:13px;font-weight:800}
 #snzChatToast .tm{color:#4B5563;font-size:12.5px;margin-top:3px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 #snzChatToast .tx{margin-left:auto;color:var(--sc-mu);font-size:14px;background:none;border:0;cursor:pointer;padding:0 0 0 6px}
-@media (max-width:520px){#snzChatPanel{right:8px;left:8px;width:auto;max-width:none;bottom:82px;height:calc(100vh - 96px);height:calc(100dvh - 96px);max-height:none}#snzChatFab{right:14px;bottom:14px;width:56px;height:56px}#snzChatToast{right:14px;left:14px;width:auto;bottom:80px}}
+#snzChatPanel{transform-origin:bottom right}
+@media (max-width:520px){
+  /* মোবাইলে পুরো স্ক্রিন না — ডান দিকে নিচে ছোট বক্স */
+  #snzChatPanel{right:12px;left:auto;bottom:80px;width:min(330px,calc(100vw - 24px));height:min(470px,calc(100vh - 110px));height:min(470px,calc(100dvh - 110px));max-height:none;border-radius:22px}
+  .sc-head{padding:11px 13px;gap:10px}.sc-hic{width:38px;height:38px;font-size:17px;border-radius:12px}.sc-ht{font-size:15px}.sc-hs{font-size:11.5px}
+  .sc-home{padding:12px}.sc-field{margin-bottom:8px}.sc-field input,.sc-field textarea{padding:10px 12px 10px 40px;font-size:13.5px;border-radius:14px}.sc-field i{top:12px;left:13px}
+  .sc-field textarea{min-height:70px}.sc-btn{padding:11px;font-size:14px;border-radius:14px}
+  .sc-body{padding:11px;gap:8px}.sc-b{font-size:13px;padding:9px 12px}
+  .sc-tab{padding:7px 0 6px;font-size:12px}.sc-tab i{font-size:17px}
+  .sc-foot{padding:8px 10px}.sc-form textarea{min-height:40px;padding:9px 12px}.sc-send{width:40px;height:40px}
+  #snzChatFab{right:14px;bottom:14px;width:54px;height:54px;font-size:23px}#snzChatToast{right:14px;left:auto;width:min(300px,calc(100vw - 28px));bottom:78px}}
 </style>
 
 <div id="snzChatToast" onclick="snzChatOpen('msgs')">
